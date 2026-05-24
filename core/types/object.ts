@@ -1,13 +1,14 @@
 
-export type ObjectID = string;
+export type ObjID = string;
 
 // ObjectMetadata represents the metadata associated with an object
 // TODO: Allow flexible properties
-export interface ObjectMetadata {
+export interface ObjFrontmatter {
+    id: ObjID;
     name: string;
+    metafields?: Record<string, any>;
 }
 
-export interface Object extends ObjectMetadata {
-    id: ObjectID;
+export interface Obj extends ObjFrontmatter {
     body: string;
 }

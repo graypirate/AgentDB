@@ -1,4 +1,4 @@
-import type { Object } from "../types/object"
+import type { Obj } from "../types/object"
 
 export type SiloID = string;
 
@@ -11,6 +11,6 @@ export interface SiloFrontmatter {
 
 export interface Silo {
     frontmatter: SiloFrontmatter;
-    objects: Object[];
+    objects: Obj[];
     silos: Silo[];
 }
