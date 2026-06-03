@@ -1,4 +1,4 @@
-# Silo
+# AgentDB
 
 To install dependencies:
 

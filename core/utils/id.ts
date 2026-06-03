@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 export const ObjectPrefix: string = "o";
 export const SiloPrefix: string = "s";
+export const BlockPrefix: string = "b";
 
 // HELPER: Creates a unique ID with the given prefix
 function createID(prefix: string): string {
@@ -13,6 +14,10 @@ export function createSiloID(): string {
     return createID(SiloPrefix);
 }
 
-export function createObjectID(): string {
+export function createObjID(): string {
     return createID(ObjectPrefix);
+}
+
+export function createBlockID(): string {
+    return createID(BlockPrefix);
 }

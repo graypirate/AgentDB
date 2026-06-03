@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "silo",
+      "name": "agentdb",
       "dependencies": {
         "yaml": "^2.9.0",
       },

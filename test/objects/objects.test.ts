@@ -12,6 +12,7 @@ import {
     readObjectFrontmatter,
     writeObject,
 } from "../../core/storage/fs/objects";
+import { BlockPrefix, createBlockID } from "../../core/utils/id";
 
 let rootPath: string | undefined;
 
@@ -32,11 +33,25 @@ test("object fs operations create, read, write, reject id changes, and delete ob
         level: 0,
         active: true,
     };
-    const body = "# Test Object\n\nThis is the object body.";
+    const blocks = [
+        {
+            id: createBlockID(),
+            content: "# Test Object",
+        },
+        {
+            id: createBlockID(),
+            content: "This is the object body.",
+            properties: {
+                role: "body",
+            },
+        },
+    ];
 
-    const objectID = await createObject(objectPath, "Test_Object", body, properties);
+    const objectID = await createObject(objectPath, "Test_Object", blocks, properties);
 
     expect(objectID.startsWith("o_")).toBe(true);
+    expect(blocks[0]?.id.startsWith(`${BlockPrefix}_`)).toBe(true);
+    expect(blocks[1]?.id.startsWith(`${BlockPrefix}_`)).toBe(true);
     expect(await isObject(objectPath)).toBe(true);
     await writeFile(nonObjectPath, "---\nid: s_fake\nname: Not Object\n---\n", "utf8");
     expect(await isObject(nonObjectPath)).toBe(false);
@@ -48,14 +63,15 @@ test("object fs operations create, read, write, reject id changes, and delete ob
         properties,
     });
     expect("body" in frontmatter).toBe(false);
+    expect("blocks" in frontmatter).toBe(false);
 
     const object = await readObject(objectPath);
-    expect(object).toEqual({
-        id: objectID,
-        name: "Test_Object",
-        properties,
-        body,
-    });
+    expect(object.id).toBe(objectID);
+    expect(object.name).toBe("Test_Object");
+    expect(object.properties).toEqual(properties);
+    expect(object.blocks).toHaveLength(1);
+    expect(object.blocks[0]?.id.startsWith(`${BlockPrefix}_`)).toBe(true);
+    expect(object.blocks[0]?.content).toBe("# Test Object\n\nThis is the object body.");
 
     await writeObject(objectPath, {
         id: objectID,
@@ -65,19 +81,25 @@ test("object fs operations create, read, write, reject id changes, and delete ob
             level: 1,
             updated: true,
         },
-        body: "Updated object body.",
+        blocks: [
+            {
+                id: createBlockID(),
+                content: "Updated object body.",
+            },
+        ],
     });
 
-    expect(await readObject(objectPath)).toEqual({
-        id: objectID,
-        name: "Test_Object_Updated",
-        properties: {
-            purpose: "updated object fs test",
-            level: 1,
-            updated: true,
-        },
-        body: "Updated object body.",
+    const updated = await readObject(objectPath);
+    expect(updated.id).toBe(objectID);
+    expect(updated.name).toBe("Test_Object_Updated");
+    expect(updated.properties).toEqual({
+        purpose: "updated object fs test",
+        level: 1,
+        updated: true,
     });
+    expect(updated.blocks).toHaveLength(1);
+    expect(updated.blocks[0]?.id.startsWith(`${BlockPrefix}_`)).toBe(true);
+    expect(updated.blocks[0]?.content).toBe("Updated object body.");
 
     await expect(writeObject(objectPath, {
         id: "o_changed",
@@ -85,7 +107,12 @@ test("object fs operations create, read, write, reject id changes, and delete ob
         properties: {
             purpose: "should fail",
         },
-        body: "This write should fail.",
+        blocks: [
+            {
+                id: createBlockID(),
+                content: "This write should fail.",
+            },
+        ],
     })).rejects.toThrow("Cannot change object id");
     expect((await readObjectFrontmatter(objectPath)).id).toBe(objectID);
 

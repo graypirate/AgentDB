@@ -1,3 +1,4 @@
+import type { Block } from "./block";
 
 export type ObjID = string;
 
@@ -5,9 +6,9 @@ export type ObjID = string;
 export interface ObjFrontmatter {
     readonly id: ObjID;
     name: string;
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
 }
 
 export interface Obj extends ObjFrontmatter {
-    body: string;
+    blocks: Block[];
 }

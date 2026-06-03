@@ -6,7 +6,7 @@ export type SiloID = string;
 export interface SiloFrontmatter {
     readonly id: SiloID;
     name: string;
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
 }
 
 export interface Silo {
