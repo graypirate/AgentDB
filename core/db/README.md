@@ -1,13 +1,17 @@
 # Database Schema
 
 One SQLite database file represents one database. The database contains one
-metadata row and separate tables for silos, objects, and blocks.
+metadata row and separate tables for silos, objects, blocks, and object-block
+placements.
 
-Every persisted entity except the database itself has a required parent:
+Silos and objects retain required containment parents:
 
 - A silo parent is the database or another silo.
 - An object parent is the database or a silo.
-- A block parent is an object or another block.
+
+Blocks are independent canonical content. The `object_blocks` table defines
+which blocks appear in an object, along with their object-specific nesting and
+ordering.
 
 IDs are stable primary keys:
 
@@ -27,6 +31,8 @@ CREATE TABLE "database" (
 ```
 
 The table contains exactly one row. The name is optional.
+New databases use schema version `2`. Initialization rejects databases whose
+metadata declares another version; migrations are not currently supported.
 
 ## Silos
 
@@ -61,28 +67,49 @@ ON objects(parent_id);
 ```
 
 `parent_id` must resolve to the database or a silo. Object content is compiled
-from descendant rows in `blocks`.
+from placements in `object_blocks`.
 
 ## Blocks
 
 ```sql
 CREATE TABLE blocks (
     id TEXT PRIMARY KEY,
-    parent_id TEXT NOT NULL,
-    position INTEGER NOT NULL CHECK (position >= 0),
     content TEXT NOT NULL,
     properties TEXT NOT NULL DEFAULT '{}'
-        CHECK (json_valid(properties)),
-    UNIQUE (parent_id, position)
+        CHECK (json_valid(properties))
 );
-
-CREATE INDEX blocks_parent_position_idx
-ON blocks(parent_id, position);
 ```
 
-`parent_id` must resolve to an object or another block. Because block parents
-are polymorphic, storage code validates parent existence, ownership, and
-cycles.
+Blocks have no intrinsic owner, parent, or position. They may exist without an
+object and may be referenced by multiple objects.
+
+## Object Blocks
+
+```sql
+CREATE TABLE object_blocks (
+    object_id TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    parent_block_id TEXT,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    PRIMARY KEY (object_id, block_id),
+    CHECK (parent_block_id IS NULL OR parent_block_id <> block_id),
+    FOREIGN KEY (object_id)
+        REFERENCES objects(id) ON DELETE CASCADE,
+    FOREIGN KEY (block_id)
+        REFERENCES blocks(id) ON DELETE CASCADE,
+    FOREIGN KEY (object_id, parent_block_id)
+        REFERENCES object_blocks(object_id, block_id) ON DELETE CASCADE
+);
+```
+
+A block may appear once in a given object and may appear in any number of
+different objects. `parent_block_id` is absent for top-level placements and
+otherwise identifies a block placed in the same object.
+
+Separate partial unique indexes enforce sibling positions for top-level and
+nested placements. Deleting an object removes only its placements. Deleting a
+block removes its placements and their placement descendants, without deleting
+other canonical blocks.
 
 ## Lookup Behavior
 
@@ -94,13 +121,12 @@ SELECT * FROM objects WHERE id = ?;
 SELECT * FROM blocks WHERE id = ?;
 ```
 
-Direct children use parent indexes:
+Containment children use parent indexes:
 
 ```sql
 SELECT * FROM silos WHERE parent_id = ?;
 SELECT * FROM objects WHERE parent_id = ?;
-SELECT * FROM blocks WHERE parent_id = ? ORDER BY position;
 ```
 
-Complete block trees are read with a recursive CTE and returned in depth-first
-preorder.
+Complete object block trees join `object_blocks` to `blocks` and use a
+recursive CTE to return object-specific placements in depth-first preorder.

@@ -2,8 +2,9 @@ import { Database } from "bun:sqlite";
 
 import type { DBMetadata } from "../types/database";
 import { createDatabaseID } from "../utils/id";
+import schema from "./schema.sql" with { type: "text" };
 
-export const SchemaVersion = 1;
+export const SchemaVersion = 2;
 
 type DatabaseRow = {
     id: string;
@@ -19,72 +20,58 @@ type DatabaseRow = {
  */
 export function initDatabase(path: string, name?: string): Database {
     const db = new Database(path);
-    db.exec("PRAGMA foreign_keys = ON;");
-    db.exec("PRAGMA journal_mode = WAL;");
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS "database" (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            schema_version INTEGER NOT NULL
-        );
+    try {
+        db.exec("PRAGMA foreign_keys = ON;");
 
-        CREATE TRIGGER IF NOT EXISTS database_singleton_insert
-        BEFORE INSERT ON "database"
-        WHEN (SELECT COUNT(*) FROM "database") >= 1
-        BEGIN
-            SELECT RAISE(ABORT, 'database metadata already exists');
-        END;
+        const isFresh = isEmptyDatabase(db);
 
-        CREATE TABLE IF NOT EXISTS silos (
-            id TEXT PRIMARY KEY,
-            parent_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            properties TEXT NOT NULL DEFAULT '{}'
-                CHECK (json_valid(properties))
-        );
+        if (!isFresh) {
+            let metadata: DBMetadata;
 
-        CREATE TABLE IF NOT EXISTS objects (
-            id TEXT PRIMARY KEY,
-            parent_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            properties TEXT NOT NULL DEFAULT '{}'
-                CHECK (json_valid(properties))
-        );
+            try {
+                metadata = getDatabaseMetadata(db);
+            } catch {
+                throw new Error(
+                    `Incompatible database schema; expected valid version ${SchemaVersion} metadata`,
+                );
+            }
 
-        CREATE TABLE IF NOT EXISTS blocks (
-            id TEXT PRIMARY KEY,
-            parent_id TEXT NOT NULL,
-            position INTEGER NOT NULL CHECK (position >= 0),
-            content TEXT NOT NULL,
-            properties TEXT NOT NULL DEFAULT '{}'
-                CHECK (json_valid(properties)),
-            UNIQUE (parent_id, position)
-        );
+            if (metadata.schemaVersion !== SchemaVersion) {
+                throw new Error(
+                    `Unsupported database schema version ${metadata.schemaVersion}; expected ${SchemaVersion}`,
+                );
+            }
+        }
 
-        CREATE INDEX IF NOT EXISTS silos_parent_id_idx
-        ON silos(parent_id);
+        db.exec("PRAGMA journal_mode = WAL;");
+        db.exec(schema);
 
-        CREATE INDEX IF NOT EXISTS objects_parent_id_idx
-        ON objects(parent_id);
-
-        CREATE INDEX IF NOT EXISTS blocks_parent_position_idx
-        ON blocks(parent_id, position);
-    `);
-
-    const metadata = db.query('SELECT id FROM "database" LIMIT 1').get();
-
-    if (!metadata) {
-        db.query(`
-            INSERT INTO "database" (id, name, schema_version)
-            VALUES ($id, $name, $schemaVersion)
-        `).run({
-            $id: createDatabaseID(),
-            $name: name ?? null,
-            $schemaVersion: SchemaVersion,
-        });
+        if (isFresh) {
+            db.query(`
+                INSERT INTO "database" (id, name, schema_version)
+                VALUES ($id, $name, $schemaVersion)
+            `).run({
+                $id: createDatabaseID(),
+                $name: name ?? null,
+                $schemaVersion: SchemaVersion,
+            });
+        }
+    } catch (error) {
+        db.close();
+        throw error;
     }
 
     return db;
+}
+
+function isEmptyDatabase(db: Database): boolean {
+    const row = db.query(`
+        SELECT COUNT(*) AS count
+        FROM sqlite_master
+        WHERE name NOT LIKE 'sqlite_%'
+    `).get() as { count: number };
+
+    return row.count === 0;
 }
 
 /**
@@ -93,19 +80,20 @@ export function initDatabase(path: string, name?: string): Database {
  * @returns The database metadata
  */
 export function getDatabaseMetadata(db: Database): DBMetadata {
-    const row = db.query(`
+    const rows = db.query(`
         SELECT
             id,
             name,
             schema_version AS schemaVersion
         FROM "database"
-        LIMIT 1
-    `).get() as DatabaseRow | null;
+        LIMIT 2
+    `).all() as DatabaseRow[];
 
-    if (!row) {
+    if (rows.length !== 1) {
         throw new Error("Database metadata not found");
     }
 
+    const row = rows[0]!;
     return {
         id: row.id,
         name: row.name ?? undefined,

@@ -1,13 +1,21 @@
 import { afterEach, expect, test } from "bun:test";
-import type { Database } from "bun:sqlite";
+import { Database } from "bun:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { getDatabaseMetadata, initDatabase, SchemaVersion } from "../../core/db/init";
 
 let db: Database | undefined;
+let tempDirectory: string | undefined;
 
 afterEach(() => {
     db?.close();
     db = undefined;
+    if (tempDirectory) {
+        rmSync(tempDirectory, { recursive: true, force: true });
+        tempDirectory = undefined;
+    }
 });
 
 test("initDatabase creates one database metadata row with an optional name", () => {
@@ -26,3 +34,68 @@ test("initDatabase creates one database metadata row with an optional name", () 
     db = initDatabase(":memory:", "Named Database");
     expect(getDatabaseMetadata(db).name).toBe("Named Database");
 });
+
+test("initDatabase rejects a declared non-v2 database without modifying it", () => {
+    const path = createTempDatabasePath();
+    const legacy = new Database(path);
+    legacy.exec(`
+        CREATE TABLE "database" (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            schema_version INTEGER NOT NULL
+        );
+        INSERT INTO "database" (id, name, schema_version)
+        VALUES ('d_legacy', 'Legacy', 1);
+    `);
+    const before = readSchema(legacy);
+    legacy.close();
+
+    expect(() => initDatabase(path)).toThrow(
+        `Unsupported database schema version 1; expected ${SchemaVersion}`,
+    );
+
+    const unchanged = new Database(path);
+    expect(readSchema(unchanged)).toEqual(before);
+    expect(unchanged.query('SELECT * FROM "database"').all()).toEqual([
+        { id: "d_legacy", name: "Legacy", schema_version: 1 },
+    ]);
+    unchanged.close();
+});
+
+test("initDatabase rejects an empty metadata table without stamping schema v2", () => {
+    const path = createTempDatabasePath();
+    const incompatible = new Database(path);
+    incompatible.exec(`
+        CREATE TABLE "database" (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            schema_version INTEGER NOT NULL
+        );
+        CREATE TABLE legacy_objects (id TEXT PRIMARY KEY);
+    `);
+    const before = readSchema(incompatible);
+    incompatible.close();
+
+    expect(() => initDatabase(path)).toThrow(
+        `Incompatible database schema; expected valid version ${SchemaVersion} metadata`,
+    );
+
+    const unchanged = new Database(path);
+    expect(readSchema(unchanged)).toEqual(before);
+    expect(unchanged.query('SELECT COUNT(*) AS count FROM "database"').get()).toEqual({ count: 0 });
+    unchanged.close();
+});
+
+function createTempDatabasePath(): string {
+    tempDirectory = mkdtempSync(join(tmpdir(), "agentdb-init-"));
+    return join(tempDirectory, "database.sqlite");
+}
+
+function readSchema(database: Database): unknown[] {
+    return database.query(`
+        SELECT type, name, tbl_name, sql
+        FROM sqlite_master
+        WHERE name NOT LIKE 'sqlite_%'
+        ORDER BY type, name
+    `).all();
+}

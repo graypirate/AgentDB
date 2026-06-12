@@ -1,37 +1,31 @@
 import type { Database } from "bun:sqlite";
 
-import type { Block, BlockID, BlockMetadata } from "../types/block";
+import type { Block, BlockID, BlockMetadata, ObjectBlock } from "../types/block";
 import type { ObjID } from "../types/object";
 import { BlockPrefix, ObjectPrefix } from "../utils/id";
 
-type BlockParentID = ObjID | BlockID;
-
-type BlockMetadataRow = {
-    id: string;
-    parentID: string;
-    position: number;
-    properties: string;
-};
-
-type BlockRow = BlockMetadataRow & {
-    content: string;
-};
+// MARK: -- Canonical Block Operations
 
 /**
- * Inserts a new block.
+ * Inserts a new block into the database.
  * @param db - The database containing the block
  * @param block - The block to insert
  */
 export function insertBlock(db: Database, block: Block): void {
-    validateInsertBlock(db, block);
+    validateBlock(block);
+
+    if (isBlock(db, block.id)) {
+        throw new Error(`Block already exists: ${block.id}`);
+    }
+
     db.query(`
-        INSERT INTO blocks (id, parent_id, position, content, properties)
-        VALUES ($id, $parentID, $position, $content, $properties)
-    `).run(mapBlockParameters(block));
+        INSERT INTO blocks (id, content, properties)
+        VALUES ($id, $content, $properties)
+    `).run(blockParameters(block));
 }
 
 /**
- * Inserts a list of blocks.
+ * Inserts a list of blocks into the database.
  * @param db - The database containing the blocks
  * @param blocks - The blocks to insert
  */
@@ -40,15 +34,21 @@ export function insertBlocks(db: Database, blocks: Block[]): void {
         return;
     }
 
-    const ordered = validateInsertBlocks(db, blocks);
+    const ids = validateBlockBatch(blocks);
+    const existingIDs = selectExistingBlockIDs(db, ids);
+
+    if (existingIDs.size > 0) {
+        throw new Error(`Block already exists: ${existingIDs.values().next().value}`);
+    }
+
     const insert = db.transaction(() => {
         const statement = db.query(`
-            INSERT INTO blocks (id, parent_id, position, content, properties)
-            VALUES ($id, $parentID, $position, $content, $properties)
+            INSERT INTO blocks (id, content, properties)
+            VALUES ($id, $content, $properties)
         `);
 
-        for (const block of ordered) {
-            statement.run(mapBlockParameters(block));
+        for (const block of blocks) {
+            statement.run(blockParameters(block));
         }
     });
 
@@ -63,20 +63,19 @@ export function insertBlocks(db: Database, blocks: Block[]): void {
  */
 export function getBlockMetadata(db: Database, blockID: BlockID): BlockMetadata {
     const row = db.query(`
-        SELECT
-            id,
-            parent_id AS parentID,
-            position,
-            properties
+        SELECT id, properties
         FROM blocks
         WHERE id = $id
-    `).get({ $id: blockID }) as BlockMetadataRow | null;
+    `).get({ $id: blockID }) as { id: BlockID; properties: string } | null;
 
     if (!row) {
         throw new Error(`Block not found: ${blockID}`);
     }
 
-    return mapToBlockMetadata(row);
+    return {
+        id: row.id,
+        properties: JSON.parse(row.properties) as Record<string, unknown>,
+    };
 }
 
 /**
@@ -87,82 +86,20 @@ export function getBlockMetadata(db: Database, blockID: BlockID): BlockMetadata 
  */
 export function getBlock(db: Database, blockID: BlockID): Block {
     const row = db.query(`
-        SELECT
-            id,
-            parent_id AS parentID,
-            position,
-            content,
-            properties
+        SELECT id, content, properties
         FROM blocks
         WHERE id = $id
-    `).get({ $id: blockID }) as BlockRow | null;
+    `).get({ $id: blockID }) as { id: BlockID; content: string; properties: string } | null;
 
     if (!row) {
         throw new Error(`Block not found: ${blockID}`);
     }
 
-    return mapToBlock(row);
-}
-
-/**
- * Reads all blocks belonging directly to a parent in canonical order.
- * @param db - The database containing the blocks
- * @param parentID - The ID of the block parent
- * @returns The parent's direct blocks ordered by position
- */
-export function getBlocks(db: Database, parentID: BlockParentID): Block[] {
-    const rows = db.query(`
-        SELECT
-            id,
-            parent_id AS parentID,
-            position,
-            content,
-            properties
-        FROM blocks
-        WHERE parent_id = $parentID
-        ORDER BY position
-    `).all({ $parentID: parentID }) as BlockRow[];
-
-    return rows.map(mapToBlock);
-}
-
-/**
- * Reads every descendant block in deterministic depth-first preorder of a parent.
- * @param db - The database containing the blocks
- * @param parentID - The ID of the root parent
- * @returns Every descendant block in depth-first preorder
- */
-export function getDescendantBlocks(db: Database, parentID: BlockParentID): Block[] {
-    const rows = db.query(`
-        WITH RECURSIVE descendants(id, parentID, position, content, properties, path) AS (
-            SELECT
-                id,
-                parent_id,
-                position,
-                content,
-                properties,
-                printf('%020d', position)
-            FROM blocks
-            WHERE parent_id = $parentID
-
-            UNION ALL
-
-            SELECT
-                child.id,
-                child.parent_id,
-                child.position,
-                child.content,
-                child.properties,
-                descendants.path || '.' || printf('%020d', child.position)
-            FROM blocks AS child
-            JOIN descendants ON child.parent_id = descendants.id
-        )
-        SELECT id, parentID, position, content, properties
-        FROM descendants
-        ORDER BY path
-    `).all({ $parentID: parentID }) as BlockRow[];
-
-    return rows.map(mapToBlock);
+    return {
+        id: row.id,
+        content: row.content,
+        properties: JSON.parse(row.properties) as Record<string, unknown>,
+    };
 }
 
 /**
@@ -184,22 +121,24 @@ export function updateBlocks(db: Database, blocks: Block[]): void {
         return;
     }
 
-    validateUpdateBlocks(db, blocks);
+    const ids = validateBlockBatch(blocks);
+    const existingIDs = selectExistingBlockIDs(db, ids);
+    const missingID = blocks.find((block) => !existingIDs.has(block.id))?.id;
+
+    if (missingID) {
+        throw new Error(`Block not found: ${missingID}`);
+    }
 
     const update = db.transaction(() => {
-        vacateBlockPositions(db, blocks.map((block) => block.id));
-
         const statement = db.query(`
             UPDATE blocks
-            SET parent_id = $parentID,
-                position = $position,
-                content = $content,
+            SET content = $content,
                 properties = $properties
             WHERE id = $id
         `);
 
         for (const block of blocks) {
-            statement.run(mapBlockParameters(block));
+            statement.run(blockParameters(block));
         }
     });
 
@@ -207,7 +146,7 @@ export function updateBlocks(db: Database, blocks: Block[]): void {
 }
 
 /**
- * Deletes a block and all of its descendants.
+ * Deletes a canonical block and all of its object placements.
  * @param db - The database containing the block
  * @param blockID - The ID of the block to delete
  * @returns True if the block was successfully deleted
@@ -217,35 +156,30 @@ export function deleteBlock(db: Database, blockID: BlockID): boolean {
 }
 
 /**
- * Deletes blocks and all of their descendants.
+ * Deletes canonical blocks and all of their object placements.
  * @param db - The database containing the blocks
  * @param blockIDs - The IDs of the blocks to delete
- * @returns The number of deleted blocks
+ * @returns The number of deleted canonical blocks
  */
 export function deleteBlocks(db: Database, blockIDs: BlockID[]): number {
-    const uniqueIDs = [...new Set(blockIDs)];
+    const ids = [...new Set(blockIDs)];
 
-    if (uniqueIDs.length === 0) {
+    if (ids.length === 0) {
         return 0;
     }
 
-    const result = db.query(`
-        WITH RECURSIVE descendants(id) AS (
-            SELECT id
-            FROM blocks
+    const remove = db.transaction(() => {
+        const matchedIDs = selectExistingBlockIDs(db, ids);
+
+        db.query(`
+            DELETE FROM blocks
             WHERE id IN (SELECT value FROM json_each($ids))
+        `).run({ $ids: JSON.stringify(ids) });
 
-            UNION
+        return matchedIDs.size;
+    });
 
-            SELECT child.id
-            FROM blocks AS child
-            JOIN descendants ON child.parent_id = descendants.id
-        )
-        DELETE FROM blocks
-        WHERE id IN (SELECT id FROM descendants)
-    `).run({ $ids: JSON.stringify(uniqueIDs) });
-
-    return result.changes;
+    return remove();
 }
 
 /**
@@ -258,58 +192,283 @@ export function isBlock(db: Database, blockID: BlockID): boolean {
     return db.query("SELECT 1 FROM blocks WHERE id = $id").get({ $id: blockID }) !== null;
 }
 
+// MARK: -- Object Block Operations
+
 /**
- * Synchronizes the complete block subtree belonging to an object.
- * @param db - The database containing the blocks
- * @param objectID - The object whose blocks should be synchronized
- * @param blocks - The complete desired block subtree
+ * Inserts one block placement into an object.
+ * @param db - The database containing the placement
+ * @param objectID - The object receiving the block
+ * @param blockID - The canonical block to place
+ * @param parentBlockID - The optional parent block placement
+ * @param position - The block's sibling position
  */
-export function syncObjectBlocks(db: Database, objectID: ObjID, blocks: Block[]): void {
-    const ordered = validateObjectBlockTree(db, objectID, blocks);
-    const existing = getDescendantBlocks(db, objectID);
-    const existingIDs = new Set(existing.map((block) => block.id));
-    const desiredIDs = new Set(blocks.map((block) => block.id));
-    const candidateIDs = blocks
-        .map((block) => block.id)
-        .filter((blockID) => !existingIDs.has(blockID));
-    const occupiedIDs = selectExistingBlockIDs(db, candidateIDs);
-    const foreignID = candidateIDs.find((blockID) => occupiedIDs.has(blockID));
+export function insertObjectBlock(db: Database, objectID: ObjID, blockID: BlockID, parentBlockID: BlockID | undefined, position: number): void {
+    insertObjectBlocks(db, objectID, [{ id: blockID, parentBlockID, position }]);
+}
 
-    if (foreignID) {
-        throw new Error(`Block ${foreignID} belongs to another object`);
-    }
-
-    if (existing.length === 0 && blocks.length === 0) {
+/**
+ * Inserts block placements into an object atomically.
+ * @param db - The database containing the placements
+ * @param objectID - The object receiving the blocks
+ * @param blocks - The block placements to insert
+ */
+export function insertObjectBlocks(db: Database, objectID: ObjID, blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]): void {
+    if (blocks.length === 0) {
+        validateObject(db, objectID);
         return;
     }
 
-    const sync = db.transaction(() => {
-        vacateBlockPositions(db, existing.map((block) => block.id));
+    validateObject(db, objectID);
+    const placements = getStoredPlacements(db, objectID);
+    const incoming = validateObjectBlockPlacementBatch(blocks);
 
-        const update = db.query(`
+    for (const blockID of incoming.keys()) {
+        if (placements.has(blockID)) {
+            throw new Error(`Block ${blockID} is already placed in object ${objectID}`);
+        }
+    }
+
+    validateCanonicalBlocksExist(db, incoming.keys());
+    const finalPlacements = new Map([...placements, ...incoming]);
+    validateObjectBlockPlacementTree(objectID, finalPlacements);
+
+    const insert = db.transaction(() => {
+        const statement = db.query(`
+            INSERT INTO object_blocks (object_id, block_id, parent_block_id, position)
+            VALUES ($objectID, $blockID, $parentID, $position)
+        `);
+
+        for (const placement of orderParentBeforeChild(incoming)) {
+            statement.run(placementParameters(objectID, placement));
+        }
+    });
+
+    insert();
+}
+
+/**
+ * Updates one block placement in an object.
+ * @param db - The database containing the placement
+ * @param objectID - The object containing the block
+ * @param blockID - The canonical block being placed
+ * @param parentBlockID - The optional parent block placement
+ * @param position - The block's sibling position
+ */
+export function updateObjectBlock(db: Database, objectID: ObjID, blockID: BlockID, parentBlockID: BlockID | undefined, position: number): void {
+    updateObjectBlocks(db, objectID, [{ id: blockID, parentBlockID, position }]);
+}
+
+/**
+ * Updates block placements in an object atomically.
+ * @param db - The database containing the placements
+ * @param objectID - The object containing the blocks
+ * @param blocks - The block placements to update
+ */
+export function updateObjectBlocks(db: Database, objectID: ObjID, blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]): void {
+    if (blocks.length === 0) {
+        validateObject(db, objectID);
+        return;
+    }
+
+    validateObject(db, objectID);
+    const placements = getStoredPlacements(db, objectID);
+    const updates = validateObjectBlockPlacementBatch(blocks);
+    const missingID = blocks.find((block) => !placements.has(block.id))?.id;
+
+    if (missingID) {
+        throw new Error(`Block ${missingID} is not placed in object ${objectID}`);
+    }
+
+    const finalPlacements = new Map(placements);
+    for (const [blockID, placement] of updates) {
+        finalPlacements.set(blockID, placement);
+    }
+    validateObjectBlockPlacementTree(objectID, finalPlacements);
+
+    const update = db.transaction(() => {
+        vacatePlacementPositions(db, objectID, [...updates.keys()], [...updates.values()].map((placement) => placement.position));
+        const statement = db.query(`
+            UPDATE object_blocks
+            SET parent_block_id = $parentID,
+                position = $position
+            WHERE object_id = $objectID
+              AND block_id = $blockID
+        `);
+
+        for (const placement of orderParentBeforeChild(updates)) {
+            statement.run(placementParameters(objectID, placement));
+        }
+    });
+
+    update();
+}
+
+/**
+ * Reads an object's complete compiled block tree.
+ * @param db - The database containing the object
+ * @param objectID - The object whose blocks should be read
+ * @returns The object's blocks in deterministic depth-first preorder
+ */
+export function getObjectBlocks(db: Database, objectID: ObjID): ObjectBlock[] {
+    validateObject(db, objectID);
+    const rows = db.query(`
+        WITH RECURSIVE placements(blockID, parentBlockID, position, path) AS (
+            SELECT
+                block_id,
+                parent_block_id,
+                position,
+                printf('%020d', position)
+            FROM object_blocks
+            WHERE object_id = $objectID
+              AND parent_block_id IS NULL
+
+            UNION ALL
+
+            SELECT
+                child.block_id,
+                child.parent_block_id,
+                child.position,
+                placements.path || '.' || printf('%020d', child.position)
+            FROM object_blocks AS child
+            JOIN placements ON child.parent_block_id = placements.blockID
+            WHERE child.object_id = $objectID
+        )
+        SELECT
+            blocks.id,
+            blocks.content,
+            blocks.properties,
+            placements.parentBlockID,
+            placements.position
+        FROM placements
+        JOIN blocks ON blocks.id = placements.blockID
+        ORDER BY placements.path
+    `).all({ $objectID: objectID }) as {
+        id: BlockID;
+        content: string;
+        properties: string;
+        parentBlockID: BlockID | null;
+        position: number;
+    }[];
+
+    return rows.map((row) => ({
+        id: row.id,
+        content: row.content,
+        properties: JSON.parse(row.properties) as Record<string, unknown>,
+        parentBlockID: row.parentBlockID ?? undefined,
+        position: row.position,
+    }));
+}
+
+/**
+ * Deletes one block placement and its placement descendants.
+ * @param db - The database containing the placement
+ * @param objectID - The object containing the placement
+ * @param blockID - The placed block to remove
+ * @returns True if the placement was successfully deleted
+ */
+export function deleteObjectBlock(db: Database, objectID: ObjID, blockID: BlockID): boolean {
+    return deleteObjectBlocks(db, objectID, [blockID]) > 0;
+}
+
+/**
+ * Deletes block placement subtrees from an object.
+ * @param db - The database containing the placements
+ * @param objectID - The object containing the placements
+ * @param blockIDs - The placement roots to remove
+ * @returns The number of explicitly deleted placement roots
+ */
+export function deleteObjectBlocks(db: Database, objectID: ObjID, blockIDs: BlockID[]): number {
+    validateObject(db, objectID);
+    const ids = [...new Set(blockIDs)];
+
+    if (ids.length === 0) {
+        return 0;
+    }
+
+    const remove = db.transaction(() => {
+        const matchedIDs = selectExistingObjectBlockIDs(db, objectID, ids);
+
+        db.query(`
+            DELETE FROM object_blocks
+            WHERE object_id = $objectID
+              AND block_id IN (SELECT value FROM json_each($ids))
+        `).run({
+            $objectID: objectID,
+            $ids: JSON.stringify(ids),
+        });
+
+        return matchedIDs.size;
+    });
+
+    return remove();
+}
+
+/**
+ * Synchronizes the complete block compilation belonging to an object.
+ * @param db - The database containing the blocks
+ * @param objectID - The object whose blocks should be synchronized
+ * @param blocks - The complete desired block compilation
+ */
+export function syncObjectBlocks(db: Database, objectID: ObjID, blocks: ObjectBlock[]): void {
+    validateObject(db, objectID);
+    const desiredPlacements = validateObjectBlockPlacementBatch(blocks);
+    validateObjectBlockPlacementTree(objectID, desiredPlacements);
+    const canonicalIDs = selectExistingBlockIDs(db, desiredPlacements.keys());
+
+    const sync = db.transaction(() => {
+        const insertBlockStatement = db.query(`
+            INSERT INTO blocks (id, content, properties)
+            VALUES ($id, $content, $properties)
+        `);
+        const updateBlockStatement = db.query(`
             UPDATE blocks
-            SET parent_id = $parentID,
-                position = $position,
-                content = $content,
+            SET content = $content,
                 properties = $properties
             WHERE id = $id
         `);
-        const insert = db.query(`
-            INSERT INTO blocks (id, parent_id, position, content, properties)
-            VALUES ($id, $parentID, $position, $content, $properties)
-        `);
 
-        for (const block of ordered) {
-            if (existingIDs.has(block.id)) {
-                update.run(mapBlockParameters(block));
+        for (const block of blocks) {
+            validateBlock(block);
+            if (canonicalIDs.has(block.id)) {
+                updateBlockStatement.run(blockParameters(block));
             } else {
-                insert.run(mapBlockParameters(block));
+                insertBlockStatement.run(blockParameters(block));
             }
         }
 
-        const omittedIDs = existing.filter((block) => !desiredIDs.has(block.id)).map((block) => block.id);
+        const storedPlacements = getStoredPlacements(db, objectID);
+        vacatePlacementPositions(db, objectID, [...storedPlacements.keys()], [...desiredPlacements.values()].map((placement) => placement.position));
+
+        const insertPlacement = db.query(`
+            INSERT INTO object_blocks (object_id, block_id, parent_block_id, position)
+            VALUES ($objectID, $blockID, $parentID, $position)
+        `);
+        const updatePlacement = db.query(`
+            UPDATE object_blocks
+            SET parent_block_id = $parentID,
+                position = $position
+            WHERE object_id = $objectID
+              AND block_id = $blockID
+        `);
+
+        for (const placement of orderParentBeforeChild(desiredPlacements)) {
+            if (storedPlacements.has(placement.id)) {
+                updatePlacement.run(placementParameters(objectID, placement));
+            } else {
+                insertPlacement.run(placementParameters(objectID, placement));
+            }
+        }
+
+        const omittedIDs = [...storedPlacements.keys()].filter((blockID) => !desiredPlacements.has(blockID));
         if (omittedIDs.length > 0) {
-            deleteBlocks(db, omittedIDs);
+            db.query(`
+                DELETE FROM object_blocks
+                WHERE object_id = $objectID
+                  AND block_id IN (SELECT value FROM json_each($ids))
+            `).run({
+                $objectID: objectID,
+                $ids: JSON.stringify(omittedIDs),
+            });
         }
     });
 
@@ -318,278 +477,154 @@ export function syncObjectBlocks(db: Database, objectID: ObjID, blocks: Block[])
 
 // MARK: -- Internal Validation Helpers
 
-/** Validates a block before inserting it. */
-function validateInsertBlock(db: Database, block: Block): void {
-    validateBlockShape(block);
-
-    if (isBlock(db, block.id)) {
-        throw new Error(`Block already exists: ${block.id}`);
-    }
-
-    validateParent(db, block.parentID);
-    validateSiblingPositions(db, [block], new Set());
-}
-
-/** Validates and orders a batch of blocks before insertion. */
-function validateInsertBlocks(db: Database, blocks: Block[]): Block[] {
-    const byID = indexBlocks(blocks);
-    const ids = new Set(byID.keys());
-    const existingIDs = selectExistingBlockIDs(db, ids);
-
-    for (const block of blocks) {
-        if (existingIDs.has(block.id)) {
-            throw new Error(`Block already exists: ${block.id}`);
-        }
-    }
-
-    validateExternalParents(db, blocks, byID);
-    validateSiblingPositions(db, blocks, ids);
-    return orderParentBeforeChild(blocks, byID);
-}
-
-/** Validates a batch of existing blocks before updating them. */
-function validateUpdateBlocks(db: Database, blocks: Block[]): void {
-    const byID = indexBlocks(blocks);
-    const ids = new Set(byID.keys());
-    const existingIDs = selectExistingBlockIDs(db, ids);
-    const storedParents = new Map<BlockID, BlockParentID>();
-    const validatedObjectIDs = new Set<ObjID>();
-
-    for (const block of blocks) {
-        if (!existingIDs.has(block.id)) {
-            throw new Error(`Block not found: ${block.id}`);
-        }
-
-        validateUpdatedBlockCycle(db, block.id, byID, storedParents, validatedObjectIDs);
-    }
-
-    validateSiblingPositions(db, blocks, ids);
-}
-
-/** Validates that blocks form a complete subtree owned by the specified object. */
-function validateObjectBlockTree(db: Database, objectID: ObjID, blocks: Block[]): Block[] {
-    validateObjectParent(db, objectID);
-    const byID = indexBlocks(blocks);
-
-    for (const block of blocks) {
-        if (block.parentID.startsWith(`${BlockPrefix}_`) && !byID.has(block.parentID)) {
-            throw new Error(`Block ${block.id} has a parent outside object ${objectID}`);
-        }
-
-        if (block.parentID.startsWith(`${ObjectPrefix}_`) && block.parentID !== objectID) {
-            throw new Error(`Block ${block.id} does not belong to object ${objectID}`);
-        }
-    }
-
-    return orderParentBeforeChild(blocks, byID);
-}
-
-/** Validates a block's ID, parent type, and position. */
-function validateBlockShape(block: Block): void {
+/** Validates a canonical block. */
+function validateBlock(block: Block): void {
     if (!block.id.startsWith(`${BlockPrefix}_`)) {
         throw new Error(`Invalid block id: ${block.id}`);
     }
-
-    if (block.id === block.parentID) {
-        throw new Error(`Block ${block.id} cannot parent itself`);
-    }
-
-    if (!block.parentID.startsWith(`${ObjectPrefix}_`) && !block.parentID.startsWith(`${BlockPrefix}_`)) {
-        throw new Error(`Block parent must be an object or block: ${block.parentID}`);
-    }
-
-    if (block.position < 0 || !Number.isSafeInteger(block.position)) {
-        throw new Error(`Invalid block position: ${block.position}`);
-    }
 }
 
-/** Validates block shapes and indexes unique IDs and sibling positions. */
-function indexBlocks(blocks: Block[]): Map<string, Block> {
-    const byID = new Map<string, Block>();
-    const positionsByParent = new Map<string, Set<number>>();
+/** Validates a canonical block batch and returns its unique IDs. */
+function validateBlockBatch(blocks: Block[]): Set<BlockID> {
+    const ids = new Set<BlockID>();
 
     for (const block of blocks) {
-        validateBlockShape(block);
-
-        if (byID.has(block.id)) {
+        validateBlock(block);
+        if (ids.has(block.id)) {
             throw new Error(`Duplicate block id: ${block.id}`);
         }
-
-        const siblingPositions = positionsByParent.get(block.parentID) ?? new Set<number>();
-        if (siblingPositions.has(block.position)) {
-            throw new Error(`Duplicate block position ${block.position} for parent ${block.parentID}`);
-        }
-
-        siblingPositions.add(block.position);
-        positionsByParent.set(block.parentID, siblingPositions);
-        byID.set(block.id, block);
+        ids.add(block.id);
     }
 
-    return byID;
+    return ids;
 }
 
-/** Validates external parents referenced by a block batch. */
-function validateExternalParents(db: Database, blocks: Block[], byID: Map<string, Block>): void {
-    const parentIDs = new Set(
-        blocks
-            .map((block) => block.parentID)
-            .filter((parentID) => !byID.has(parentID)),
-    );
-
-    for (const parentID of parentIDs) {
-        validateParent(db, parentID);
-    }
-}
-
-/** Validates that requested sibling positions are available. */
-function validateSiblingPositions(db: Database, blocks: Block[], ignoredIDs: Set<string>): void {
-    if (blocks.length === 0) {
-        return;
-    }
-
-    const positions = blocks.map((block) => ({
-        parentID: block.parentID,
-        position: block.position,
-    }));
-    const rows = db.query(`
-        SELECT
-            blocks.id,
-            blocks.parent_id AS parentID,
-            blocks.position
-        FROM blocks
-        JOIN json_each($positions) AS requested
-          ON blocks.parent_id = json_extract(requested.value, '$.parentID')
-         AND blocks.position = json_extract(requested.value, '$.position')
-    `).all({ $positions: JSON.stringify(positions) }) as {
-        id: BlockID;
-        parentID: BlockParentID;
-        position: number;
-    }[];
-    const occupiedByParent = new Map<string, Map<number, BlockID>>();
-
-    for (const row of rows) {
-        const occupiedPositions = occupiedByParent.get(row.parentID) ?? new Map<number, BlockID>();
-        occupiedPositions.set(row.position, row.id);
-        occupiedByParent.set(row.parentID, occupiedPositions);
-    }
+/** Validates and indexes a placement batch. */
+function validateObjectBlockPlacementBatch(
+    blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]
+): Map<BlockID, { id: BlockID; parentBlockID?: BlockID; position: number }> {
+    const placements = new Map<BlockID, { id: BlockID; parentBlockID?: BlockID; position: number }>();
 
     for (const block of blocks) {
-        const occupiedID = occupiedByParent.get(block.parentID)?.get(block.position);
-        if (occupiedID && !ignoredIDs.has(occupiedID)) {
-            throw new Error(`Block position ${block.position} is occupied for parent ${block.parentID}`);
+        if (!block.id.startsWith(`${BlockPrefix}_`)) {
+            throw new Error(`Invalid block id: ${block.id}`);
         }
+        if (block.parentBlockID !== undefined && !block.parentBlockID.startsWith(`${BlockPrefix}_`)) {
+            throw new Error(`Invalid parent block id: ${block.parentBlockID}`);
+        }
+        if (block.id === block.parentBlockID) {
+            throw new Error(`Block ${block.id} cannot parent itself`);
+        }
+        if (!Number.isSafeInteger(block.position) || block.position < 0) {
+            throw new Error(`Invalid block position: ${block.position}`);
+        }
+        if (placements.has(block.id)) {
+            throw new Error(`Duplicate block placement: ${block.id}`);
+        }
+        placements.set(block.id, block);
     }
+
+    return placements;
 }
 
-/** Validates that updating a block's parent does not create a cycle. */
-function validateUpdatedBlockCycle(
-    db: Database,
-    blockID: BlockID,
-    updates: Map<string, Block>,
-    storedParents: Map<BlockID, BlockParentID>,
-    validatedObjectIDs: Set<ObjID>,
-): void {
-    const visited = new Set<string>([blockID]);
-    let parentID: string = updates.get(blockID)!.parentID;
+/** Validates a complete object placement tree. */
+function validateObjectBlockPlacementTree(objectID: ObjID, placements: Map<BlockID, { id: BlockID; parentBlockID?: BlockID; position: number }>): void {
+    const siblingPositions = new Map<string, Set<number>>();
 
-    while (parentID.startsWith(`${BlockPrefix}_`)) {
-        if (visited.has(parentID)) {
-            throw new Error(`Block cycle detected at ${parentID}`);
+    for (const placement of placements.values()) {
+        if (placement.parentBlockID !== undefined && !placements.has(placement.parentBlockID)) {
+            throw new Error(`Parent block ${placement.parentBlockID} is not placed in object ${objectID}`);
         }
 
-        visited.add(parentID);
-        const updatedParent = updates.get(parentID);
-
-        if (updatedParent) {
-            parentID = updatedParent.parentID;
-            continue;
+        const parentKey = placement.parentBlockID ?? objectID;
+        const positions = siblingPositions.get(parentKey) ?? new Set<number>();
+        if (positions.has(placement.position)) {
+            throw new Error(`Block position ${placement.position} is occupied for parent ${parentKey}`);
         }
+        positions.add(placement.position);
+        siblingPositions.set(parentKey, positions);
+    }
 
-        let storedParent = storedParents.get(parentID);
-        if (!storedParent) {
-            const row = db.query("SELECT parent_id AS parentID FROM blocks WHERE id = $id").get({ $id: parentID }) as { parentID: BlockParentID } | null;
+    for (const placement of placements.values()) {
+        const visited = new Set<BlockID>([placement.id]);
+        let parentBlockID = placement.parentBlockID;
 
-            if (!row) {
-                throw new Error(`Block parent not found: ${parentID}`);
+        while (parentBlockID !== undefined) {
+            if (visited.has(parentBlockID)) {
+                throw new Error(`Block cycle detected at ${parentBlockID}`);
             }
-
-            storedParent = row.parentID;
-            storedParents.set(parentID, storedParent);
+            visited.add(parentBlockID);
+            parentBlockID = placements.get(parentBlockID)?.parentBlockID;
         }
-
-        parentID = storedParent;
-    }
-
-    if (!parentID.startsWith(`${ObjectPrefix}_`)) {
-        throw new Error(`Block parent must be an object or block: ${parentID}`);
-    }
-
-    if (!validatedObjectIDs.has(parentID)) {
-        validateObjectParent(db, parentID);
-        validatedObjectIDs.add(parentID);
     }
 }
 
-/** Validates that a block's parent is an existing object or block. */
-function validateParent(db: Database, parentID: string): void {
-    if (parentID.startsWith(`${ObjectPrefix}_`)) {
-        validateObjectParent(db, parentID);
-        return;
-    }
-
-    if (parentID.startsWith(`${BlockPrefix}_`)) {
-        if (!db.query("SELECT 1 FROM blocks WHERE id = $id").get({ $id: parentID })) {
-            throw new Error(`Block parent not found: ${parentID}`);
-        }
-        return;
-    }
-
-    throw new Error(`Block parent must be an object or block: ${parentID}`);
-}
-
-/** Validates that an object parent exists. */
-function validateObjectParent(db: Database, objectID: ObjID): void {
+/** Validates that an object exists. */
+function validateObject(db: Database, objectID: ObjID): void {
     if (!objectID.startsWith(`${ObjectPrefix}_`)) {
         throw new Error(`Invalid object id: ${objectID}`);
     }
 
     if (!db.query("SELECT 1 FROM objects WHERE id = $id").get({ $id: objectID })) {
-        throw new Error(`Object parent not found: ${objectID}`);
+        throw new Error(`Object not found: ${objectID}`);
+    }
+}
+
+/** Validates that canonical blocks exist. */
+function validateCanonicalBlocksExist(db: Database, blockIDs: Iterable<BlockID>): void {
+    const ids = [...blockIDs];
+    const existingIDs = selectExistingBlockIDs(db, ids);
+    const missingID = ids.find((blockID) => !existingIDs.has(blockID));
+
+    if (missingID) {
+        throw new Error(`Block not found: ${missingID}`);
     }
 }
 
 // MARK: -- Internal Action Helpers
 
-/** Orders blocks so every parent precedes its children. */
-function orderParentBeforeChild(blocks: Block[], byID: Map<string, Block>): Block[] {
-    const childrenByParent = new Map<string, Block[]>();
-    const ready: Block[] = [];
-    const ordered: Block[] = [];
+/** Reads all stored placements for an object. */
+function getStoredPlacements(db: Database, objectID: ObjID): Map<BlockID, { id: BlockID; parentBlockID?: BlockID; position: number }> {
+    const rows = db.query(`
+        SELECT
+            block_id AS id,
+            parent_block_id AS parentBlockID,
+            position
+        FROM object_blocks
+        WHERE object_id = $objectID
+    `).all({ $objectID: objectID }) as { id: BlockID; parentBlockID: BlockID | null; position: number }[];
 
-    for (const block of blocks) {
-        if (!byID.has(block.parentID)) {
-            ready.push(block);
+    return new Map(rows.map((row) => [
+        row.id,
+        {
+            id: row.id,
+            parentBlockID: row.parentBlockID ?? undefined,
+            position: row.position,
+        },
+    ]));
+}
+
+/** Orders placements so every parent precedes its children. */
+function orderParentBeforeChild<T extends { id: BlockID; parentBlockID?: BlockID }>(placements: Map<BlockID, T>): T[] {
+    const childrenByParent = new Map<BlockID, T[]>();
+    const ready: T[] = [];
+    const ordered: T[] = [];
+
+    for (const placement of placements.values()) {
+        if (placement.parentBlockID === undefined || !placements.has(placement.parentBlockID)) {
+            ready.push(placement);
             continue;
         }
 
-        const children = childrenByParent.get(block.parentID) ?? [];
-        children.push(block);
-        childrenByParent.set(block.parentID, children);
+        const children = childrenByParent.get(placement.parentBlockID) ?? [];
+        children.push(placement);
+        childrenByParent.set(placement.parentBlockID, children);
     }
 
     for (let index = 0; index < ready.length; index++) {
-        const block = ready[index]!;
-        ordered.push(block);
-
-        for (const child of childrenByParent.get(block.id) ?? []) {
-            ready.push(child);
-        }
-    }
-
-    if (ordered.length !== blocks.length) {
-        const orderedIDs = new Set(ordered.map((block) => block.id));
-        const cycleID = blocks.find((block) => !orderedIDs.has(block.id))!.id;
-        throw new Error(`Block cycle detected at ${cycleID}`);
+        const placement = ready[index]!;
+        ordered.push(placement);
+        ready.push(...(childrenByParent.get(placement.id) ?? []));
     }
 
     return ordered;
@@ -611,48 +646,66 @@ function selectExistingBlockIDs(db: Database, blockIDs: Iterable<BlockID>): Set<
     return new Set(rows.map((row) => row.id));
 }
 
-/** Moves blocks out of the unique sibling-position range before a batch reorder. */
-function vacateBlockPositions(db: Database, blockIDs: BlockID[]): void {
+/** Returns the requested block IDs placed in an object. */
+function selectExistingObjectBlockIDs(db: Database, objectID: ObjID, blockIDs: Iterable<BlockID>): Set<BlockID> {
+    const ids = [...blockIDs];
+    if (ids.length === 0) {
+        return new Set();
+    }
+
+    const rows = db.query(`
+        SELECT block_id AS id
+        FROM object_blocks
+        WHERE object_id = $objectID
+          AND block_id IN (SELECT value FROM json_each($ids))
+    `).all({
+        $objectID: objectID,
+        $ids: JSON.stringify(ids),
+    }) as { id: BlockID }[];
+
+    return new Set(rows.map((row) => row.id));
+}
+
+/** Moves placements out of the unique sibling-position range before a batch reorder. */
+function vacatePlacementPositions(db: Database, objectID: ObjID, blockIDs: BlockID[], desiredPositions: number[]): void {
     if (blockIDs.length === 0) {
         return;
     }
 
-    const row = db.query("SELECT COALESCE(MAX(position), -1) AS maxPosition FROM blocks").get() as { maxPosition: number };
+    const row = db.query(`
+        SELECT COALESCE(MAX(position), -1) AS maxPosition
+        FROM object_blocks
+        WHERE object_id = $objectID
+    `).get({ $objectID: objectID }) as { maxPosition: number };
+    const desiredMaxPosition = desiredPositions.length > 0 ? Math.max(...desiredPositions) : -1;
+
     db.query(`
-        UPDATE blocks
+        UPDATE object_blocks
         SET position = position + $offset
-        WHERE id IN (SELECT value FROM json_each($ids))
+        WHERE object_id = $objectID
+          AND block_id IN (SELECT value FROM json_each($ids))
     `).run({
-        $offset: row.maxPosition + 1,
+        $objectID: objectID,
+        $offset: Math.max(row.maxPosition, desiredMaxPosition) + 1,
         $ids: JSON.stringify(blockIDs),
     });
 }
 
-/** Maps a block to named SQLite parameters. */
-function mapBlockParameters(block: Block): Record<string, string | number> {
+/** Maps a canonical block to named SQLite parameters. */
+function blockParameters(block: Block): Record<string, string> {
     return {
         $id: block.id,
-        $parentID: block.parentID,
-        $position: block.position,
         $content: block.content,
         $properties: JSON.stringify(block.properties ?? {}),
     };
 }
 
-/** Maps a SQLite block row to canonical block metadata. */
-function mapToBlockMetadata(row: BlockMetadataRow): BlockMetadata {
+/** Maps a block placement to named SQLite parameters. */
+function placementParameters(objectID: ObjID, placement: { id: BlockID; parentBlockID?: BlockID; position: number }): Record<string, string | number | null> {
     return {
-        id: row.id,
-        parentID: row.parentID,
-        position: row.position,
-        properties: JSON.parse(row.properties) as Record<string, unknown>,
-    };
-}
-
-/** Maps a SQLite block row to a canonical block. */
-function mapToBlock(row: BlockRow): Block {
-    return {
-        ...mapToBlockMetadata(row),
-        content: row.content,
+        $objectID: objectID,
+        $blockID: placement.id,
+        $parentID: placement.parentBlockID ?? null,
+        $position: placement.position,
     };
 }

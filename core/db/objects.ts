@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-import { deleteBlocks, getBlocks, getDescendantBlocks, syncObjectBlocks } from "./blocks";
+import { getObjectBlocks, syncObjectBlocks } from "./blocks";
 import type { ObjMetadata, Obj, ObjID } from "../types/object";
 import { DatabasePrefix, ObjectPrefix, SiloPrefix } from "../utils/id";
 
@@ -30,7 +30,7 @@ export function insertObject(db: Database, metadata: ObjMetadata): void {
 }
 
 /**
- * Reads the object metadata (name+properties) at the specified ID.
+ * Reads object metadata without its blocks.
  * This function does not read the object's blocks.
  *
  * @param db - The database containing the object
@@ -61,7 +61,7 @@ export function getObjectMetadata(db: Database, ObjectID: ObjID): ObjMetadata {
 }
 
 /**
- * Reads the object at the specified ID and returns the full object.
+ * Reads an object's metadata and its blocks.
  * @param db - The database containing the object
  * @param ObjectID - The ID of the object to read
  * @returns The full Obj at the specified ID
@@ -69,12 +69,12 @@ export function getObjectMetadata(db: Database, ObjectID: ObjID): ObjMetadata {
 export function getObject(db: Database, ObjectID: ObjID): Obj {
     return {
         ...getObjectMetadata(db, ObjectID),
-        blocks: getDescendantBlocks(db, ObjectID),
+        blocks: getObjectBlocks(db, ObjectID),
     };
 }
 
 /**
- * Updates the given object metadata.
+ * Updates object metadata.
  * @param db - The database containing the object
  * @param metadata - The object metadata to update
  */
@@ -95,7 +95,7 @@ export function updateObjectMetadata(db: Database, metadata: ObjMetadata): void 
 }
 
 /**
- * Updates the given object and synchronizes its complete block subtree.
+ * Updates object and synchronizes its complete block subtree.
  * @param db - The database containing the object
  * @param object - The object to update
  */
@@ -115,13 +115,7 @@ export function updateObject(db: Database, object: Obj): void {
  * @returns True if the object was successfully deleted
  */
 export function deleteObject(db: Database, ObjectID: ObjID): boolean {
-    const remove = db.transaction(() => {
-        const blockIDs = getBlocks(db, ObjectID).map((block) => block.id);
-        deleteBlocks(db, blockIDs);
-        return db.query("DELETE FROM objects WHERE id = $id").run({ $id: ObjectID }).changes > 0;
-    });
-
-    return remove();
+    return db.query("DELETE FROM objects WHERE id = $id").run({ $id: ObjectID }).changes > 0;
 }
 
 // MARK: -- Object Helpers

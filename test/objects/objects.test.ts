@@ -1,7 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 
-import { insertBlocks } from "../../core/db/blocks";
+import {
+    getBlock,
+    getObjectBlocks,
+    insertBlock,
+    insertBlocks,
+    insertObjectBlocks,
+    isBlock,
+} from "../../core/db/blocks";
 import { getDatabaseMetadata, initDatabase } from "../../core/db/init";
 import {
     deleteObject,
@@ -12,6 +19,7 @@ import {
     updateObject,
     updateObjectMetadata,
 } from "../../core/db/objects";
+import type { ObjectBlock } from "../../core/types/block";
 import type { Obj } from "../../core/types/object";
 
 let db: Database | undefined;
@@ -69,9 +77,45 @@ test("object operations persist caller IDs under database and silo parents", () 
         parentID: "s_missing",
         name: "Missing Parent",
     })).toThrow("Silo parent not found");
+
+    updateObjectMetadata(db, {
+        id: "o_root",
+        parentID: siloID,
+        name: "Moved Object",
+        properties: {
+            scope: "silo",
+        },
+    });
+    expect(getObjectMetadata(db, "o_root")).toEqual({
+        id: "o_root",
+        parentID: siloID,
+        name: "Moved Object",
+        properties: {
+            scope: "silo",
+        },
+    });
 });
 
-test("getObject returns every descendant block in depth-first preorder", () => {
+test("empty objects compile with no blocks", () => {
+    db = initDatabase(":memory:");
+    const databaseID = getDatabaseMetadata(db).id;
+
+    insertObject(db, {
+        id: "o_empty",
+        parentID: databaseID,
+        name: "Empty",
+    });
+
+    expect(getObject(db, "o_empty")).toEqual({
+        id: "o_empty",
+        parentID: databaseID,
+        name: "Empty",
+        properties: {},
+        blocks: [],
+    });
+});
+
+test("getObject compiles nested placements in depth-first preorder", () => {
     db = initDatabase(":memory:");
     const databaseID = getDatabaseMetadata(db).id;
 
@@ -81,11 +125,18 @@ test("getObject returns every descendant block in depth-first preorder", () => {
         name: "Tree",
     });
     insertBlocks(db, [
-        block("b_child_two", "b_parent", 1, "Child two"),
-        block("b_second", "o_tree", 1, "Second"),
-        block("b_grandchild", "b_child_one", 0, "Grandchild"),
-        block("b_parent", "o_tree", 0, "Parent"),
-        block("b_child_one", "b_parent", 0, "Child one"),
+        block("b_child_two", "Child two"),
+        block("b_second", "Second"),
+        block("b_grandchild", "Grandchild"),
+        block("b_parent", "Parent"),
+        block("b_child_one", "Child one"),
+    ]);
+    insertObjectBlocks(db, "o_tree", [
+        placement("b_child_two", "b_parent", 1),
+        placement("b_second", undefined, 1),
+        placement("b_grandchild", "b_child_one", 0),
+        placement("b_parent", undefined, 0),
+        placement("b_child_one", "b_parent", 0),
     ]);
 
     const object = getObject(db, "o_tree");
@@ -96,9 +147,16 @@ test("getObject returns every descendant block in depth-first preorder", () => {
         "b_child_two",
         "b_second",
     ]);
+    expect(object.blocks.map((item) => item.parentBlockID)).toEqual([
+        undefined,
+        "b_parent",
+        "b_child_one",
+        "b_parent",
+        undefined,
+    ]);
 });
 
-test("updateObject atomically reconciles the complete block subtree", () => {
+test("updateObject synchronizes placements and globally updates shared blocks", () => {
     db = initDatabase(":memory:");
     const databaseID = getDatabaseMetadata(db).id;
 
@@ -107,10 +165,23 @@ test("updateObject atomically reconciles the complete block subtree", () => {
         parentID: databaseID,
         name: "Original",
     });
+    insertObject(db, {
+        id: "o_shared",
+        parentID: databaseID,
+        name: "Shared",
+    });
     insertBlocks(db, [
-        block("b_keep", "o_update", 0, "Keep"),
-        block("b_remove", "o_update", 1, "Remove"),
-        block("b_remove_child", "b_remove", 0, "Remove child"),
+        block("b_keep", "Keep"),
+        block("b_remove", "Remove"),
+        block("b_remove_child", "Remove child"),
+    ]);
+    insertObjectBlocks(db, "o_update", [
+        placement("b_keep", undefined, 0),
+        placement("b_remove", undefined, 1),
+        placement("b_remove_child", "b_remove", 0),
+    ]);
+    insertObjectBlocks(db, "o_shared", [
+        placement("b_keep", undefined, 0),
     ]);
 
     const desired: Obj = {
@@ -121,9 +192,9 @@ test("updateObject atomically reconciles the complete block subtree", () => {
             status: "done",
         },
         blocks: [
-            block("b_new_child", "b_keep", 0, "New child"),
-            block("b_new", "o_update", 1, "New"),
-            block("b_keep", "o_update", 0, "Keep updated"),
+            objectBlock("b_new_child", "New child", "b_keep", 0),
+            objectBlock("b_new", "New", undefined, 1),
+            objectBlock("b_keep", "Keep updated", undefined, 0),
         ],
     };
 
@@ -137,8 +208,11 @@ test("updateObject atomically reconciles the complete block subtree", () => {
         "b_new",
     ]);
     expect(updated.blocks[0]?.content).toBe("Keep updated");
-    expect(db.query("SELECT 1 FROM blocks WHERE id = 'b_remove'").get()).toBeNull();
-    expect(db.query("SELECT 1 FROM blocks WHERE id = 'b_remove_child'").get()).toBeNull();
+    expect(getObject(db, "o_shared").blocks[0]?.content).toBe("Keep updated");
+    expect(getBlock(db, "b_remove").content).toBe("Remove");
+    expect(getBlock(db, "b_remove_child").content).toBe("Remove child");
+    expect(getObjectBlocks(db, "o_update").some((item) => item.id === "b_remove")).toBe(false);
+    expect(isBlock(db, "b_new")).toBe(true);
 
     updateObjectMetadata(db, {
         id: "o_update",
@@ -146,34 +220,37 @@ test("updateObject atomically reconciles the complete block subtree", () => {
         name: "Metadata Only",
     });
     expect(getObject(db, "o_update").blocks).toHaveLength(3);
-
-    expect(deleteObject(db, "o_update")).toBe(true);
-    expect(deleteObject(db, "o_update")).toBe(false);
-    expect(db.query("SELECT COUNT(*) AS count FROM blocks").get()).toEqual({ count: 0 });
 });
 
-test("updateObject rejects blocks belonging to another object", () => {
+test("deleteObject removes only its placements and preserves canonical blocks", () => {
     db = initDatabase(":memory:");
     const databaseID = getDatabaseMetadata(db).id;
 
     insertObject(db, { id: "o_one", parentID: databaseID, name: "One" });
     insertObject(db, { id: "o_two", parentID: databaseID, name: "Two" });
-    insertBlocks(db, [block("b_foreign", "o_two", 0, "Foreign")]);
+    insertBlock(db, block("b_shared", "Shared"));
+    insertObjectBlocks(db, "o_one", [placement("b_shared", undefined, 0)]);
+    insertObjectBlocks(db, "o_two", [placement("b_shared", undefined, 0)]);
 
-    expect(() => updateObject(db!, {
-        id: "o_one",
-        parentID: databaseID,
-        name: "One",
-        blocks: [block("b_foreign", "o_one", 0, "Stolen")],
-    })).toThrow("belongs to another object");
-    expect(getObject(db, "o_two").blocks[0]?.id).toBe("b_foreign");
+    expect(deleteObject(db, "o_one")).toBe(true);
+    expect(deleteObject(db, "o_one")).toBe(false);
+    expect(isBlock(db, "b_shared")).toBe(true);
+    expect(getObject(db, "o_two").blocks.map((item) => item.id)).toEqual(["b_shared"]);
+    expect(db.query(`
+        SELECT COUNT(*) AS count
+        FROM object_blocks
+        WHERE object_id = 'o_one'
+    `).get()).toEqual({ count: 0 });
 });
 
-function block(id: string, parentID: string, position: number, content: string) {
-    return {
-        id,
-        parentID,
-        position,
-        content,
-    };
+function block(id: string, content: string) {
+    return { id, content };
+}
+
+function placement(id: string, parentBlockID: string | undefined, position: number) {
+    return { id, parentBlockID, position };
+}
+
+function objectBlock(id: string, content: string, parentBlockID: string | undefined, position: number): ObjectBlock {
+    return { id, content, parentBlockID, position };
 }
