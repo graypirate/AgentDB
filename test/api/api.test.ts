@@ -54,7 +54,7 @@ test("initializes and opens an existing database", () => {
     expect(readDatabase(db)).toEqual(metadata);
 });
 
-test("quick create functions generate IDs and return existing domain types", () => {
+test("quick create functions generate IDs and return public domain types", () => {
     db = initializeDatabase(":memory:");
     const databaseID = readDatabase(db).id;
     const silo = createSilo(db, databaseID, "Projects", { active: true });
@@ -106,7 +106,7 @@ test("writeBlock creates without an ID and updates with an ID", () => {
     expect(readBlock(db, created.id)).toEqual(updated);
 });
 
-test("writeObject creates a complete recursive object and returns flat blocks", () => {
+test("writeObject creates and returns a complete recursive object", () => {
     db = initializeDatabase(":memory:");
     const databaseID = readDatabase(db).id;
 
@@ -134,17 +134,39 @@ test("writeObject creates a complete recursive object and returns flat blocks", 
     });
 
     expect(object.id).toStartWith("o_");
-    expect(object.blocks).toHaveLength(4);
-    expect(object.blocks.map((block) => block.content)).toEqual([
-        "Parent",
-        "Child",
-        "Grandchild",
-        "Second",
-    ]);
-    expect(object.blocks.map((block) => block.position)).toEqual([0, 0, 0, 1]);
-    expect(object.blocks[1]?.parentBlockID).toBe(object.blocks[0]?.id);
-    expect(object.blocks[2]?.parentBlockID).toBe(object.blocks[1]?.id);
+    expect(object.blocks).toHaveLength(2);
+    expect(object.blocks.map((block) => block.content)).toEqual(["Parent", "Second"]);
+    expect(object.blocks[0]?.children[0]?.content).toBe("Child");
+    expect(object.blocks[0]?.children[0]?.children[0]?.content).toBe("Grandchild");
+    expect(object.blocks[0]?.id).toStartWith("b_");
+    expect(object.blocks[0]?.children[0]?.id).toStartWith("b_");
     expect(readObject(db, object.id)).toEqual(object);
+});
+
+test("readObject output can be written back without changing its shape", () => {
+    db = initializeDatabase(":memory:");
+    const databaseID = readDatabase(db).id;
+    const created = writeObject(db, {
+        parentID: databaseID,
+        name: "Round trip",
+        properties: { version: 1 },
+        blocks: [{
+            content: "First",
+            properties: {},
+            children: [{
+                content: "Nested",
+                properties: { depth: 1 },
+                children: [],
+            }],
+        }, {
+            content: "Second",
+            properties: {},
+            children: [],
+        }],
+    });
+
+    expect(writeObject(db, created)).toEqual(created);
+    expect(readObject(db, created.id)).toEqual(created);
 });
 
 test("writeObject completely replaces placements and globally updates reused blocks", () => {
@@ -153,7 +175,7 @@ test("writeObject completely replaces placements and globally updates reused blo
     const shared = createBlock(db, "Shared");
     const first = writeObject(db, objectWrite(databaseID, "First", shared.id));
     const second = writeObject(db, objectWrite(databaseID, "Second", shared.id));
-    const omitted = first.blocks[1]!;
+    const omitted = first.blocks[0]!.children[0]!;
 
     const replaced = writeObject(db, {
         id: first.id,
@@ -192,7 +214,7 @@ test("entity-specific list functions return metadata and direct IDs", () => {
         }],
     });
     const parent = object.blocks[0]!;
-    const child = object.blocks[1]!;
+    const child = parent.children[0]!;
 
     expect(listDatabase(db)).toEqual({
         metadata: readDatabase(db),

@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-import type { Block, BlockID, BlockMetadata, ObjectBlock } from "../types/block";
+import type { StoredBlock, BlockID, BlockMetadata, BlockPlacement } from "../types/block";
 import type { ObjID } from "../types/object";
 import { BlockPrefix, ObjectPrefix } from "../utils/id";
 
@@ -11,10 +11,10 @@ import { BlockPrefix, ObjectPrefix } from "../utils/id";
  * @param db - The database containing the block
  * @param block - The block to insert
  */
-export function insertBlock(db: Database, block: Block): void {
+export function insertStoredBlock(db: Database, block: StoredBlock): void {
     validateBlock(block);
 
-    if (isBlock(db, block.id)) {
+    if (isStoredBlock(db, block.id)) {
         throw new Error(`Block already exists: ${block.id}`);
     }
 
@@ -29,7 +29,7 @@ export function insertBlock(db: Database, block: Block): void {
  * @param db - The database containing the blocks
  * @param blocks - The blocks to insert
  */
-export function insertBlocks(db: Database, blocks: Block[]): void {
+export function insertStoredBlocks(db: Database, blocks: StoredBlock[]): void {
     if (blocks.length === 0) {
         return;
     }
@@ -84,7 +84,7 @@ export function getBlockMetadata(db: Database, blockID: BlockID): BlockMetadata 
  * @param blockID - The ID of the block to read
  * @returns The full block at the specified ID
  */
-export function getBlock(db: Database, blockID: BlockID): Block {
+export function getStoredBlock(db: Database, blockID: BlockID): StoredBlock {
     const row = db.query(`
         SELECT id, content, properties
         FROM blocks
@@ -107,8 +107,8 @@ export function getBlock(db: Database, blockID: BlockID): Block {
  * @param db - The database containing the block
  * @param block - The block to update
  */
-export function updateBlock(db: Database, block: Block): void {
-    updateBlocks(db, [block]);
+export function updateStoredBlock(db: Database, block: StoredBlock): void {
+    updateStoredBlocks(db, [block]);
 }
 
 /**
@@ -116,7 +116,7 @@ export function updateBlock(db: Database, block: Block): void {
  * @param db - The database containing the blocks
  * @param blocks - The blocks to update
  */
-export function updateBlocks(db: Database, blocks: Block[]): void {
+export function updateStoredBlocks(db: Database, blocks: StoredBlock[]): void {
     if (blocks.length === 0) {
         return;
     }
@@ -151,8 +151,8 @@ export function updateBlocks(db: Database, blocks: Block[]): void {
  * @param blockID - The ID of the block to delete
  * @returns True if the block was successfully deleted
  */
-export function deleteBlock(db: Database, blockID: BlockID): boolean {
-    return deleteBlocks(db, [blockID]) > 0;
+export function deleteStoredBlock(db: Database, blockID: BlockID): boolean {
+    return deleteStoredBlocks(db, [blockID]) > 0;
 }
 
 /**
@@ -161,7 +161,7 @@ export function deleteBlock(db: Database, blockID: BlockID): boolean {
  * @param blockIDs - The IDs of the blocks to delete
  * @returns The number of deleted canonical blocks
  */
-export function deleteBlocks(db: Database, blockIDs: BlockID[]): number {
+export function deleteStoredBlocks(db: Database, blockIDs: BlockID[]): number {
     const ids = [...new Set(blockIDs)];
 
     if (ids.length === 0) {
@@ -188,7 +188,7 @@ export function deleteBlocks(db: Database, blockIDs: BlockID[]): number {
  * @param blockID - The block ID to check
  * @returns True if the block exists
  */
-export function isBlock(db: Database, blockID: BlockID): boolean {
+export function isStoredBlock(db: Database, blockID: BlockID): boolean {
     return db.query("SELECT 1 FROM blocks WHERE id = $id").get({ $id: blockID }) !== null;
 }
 
@@ -202,8 +202,8 @@ export function isBlock(db: Database, blockID: BlockID): boolean {
  * @param parentBlockID - The optional parent block placement
  * @param position - The block's sibling position
  */
-export function insertObjectBlock(db: Database, objectID: ObjID, blockID: BlockID, parentBlockID: BlockID | undefined, position: number): void {
-    insertObjectBlocks(db, objectID, [{ id: blockID, parentBlockID, position }]);
+export function insertBlockPlacement(db: Database, objectID: ObjID, blockID: BlockID, parentBlockID: BlockID | undefined, position: number): void {
+    insertBlockPlacements(db, objectID, [{ id: blockID, parentBlockID, position }]);
 }
 
 /**
@@ -212,7 +212,7 @@ export function insertObjectBlock(db: Database, objectID: ObjID, blockID: BlockI
  * @param objectID - The object receiving the blocks
  * @param blocks - The block placements to insert
  */
-export function insertObjectBlocks(db: Database, objectID: ObjID, blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]): void {
+export function insertBlockPlacements(db: Database, objectID: ObjID, blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]): void {
     if (blocks.length === 0) {
         validateObject(db, objectID);
         return;
@@ -254,8 +254,8 @@ export function insertObjectBlocks(db: Database, objectID: ObjID, blocks: { id: 
  * @param parentBlockID - The optional parent block placement
  * @param position - The block's sibling position
  */
-export function updateObjectBlock(db: Database, objectID: ObjID, blockID: BlockID, parentBlockID: BlockID | undefined, position: number): void {
-    updateObjectBlocks(db, objectID, [{ id: blockID, parentBlockID, position }]);
+export function updateBlockPlacement(db: Database, objectID: ObjID, blockID: BlockID, parentBlockID: BlockID | undefined, position: number): void {
+    updateBlockPlacements(db, objectID, [{ id: blockID, parentBlockID, position }]);
 }
 
 /**
@@ -264,7 +264,7 @@ export function updateObjectBlock(db: Database, objectID: ObjID, blockID: BlockI
  * @param objectID - The object containing the blocks
  * @param blocks - The block placements to update
  */
-export function updateObjectBlocks(db: Database, objectID: ObjID, blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]): void {
+export function updateBlockPlacements(db: Database, objectID: ObjID, blocks: { id: BlockID; parentBlockID?: BlockID; position: number }[]): void {
     if (blocks.length === 0) {
         validateObject(db, objectID);
         return;
@@ -309,7 +309,7 @@ export function updateObjectBlocks(db: Database, objectID: ObjID, blocks: { id: 
  * @param objectID - The object whose blocks should be read
  * @returns The object's blocks in deterministic depth-first preorder
  */
-export function getObjectBlocks(db: Database, objectID: ObjID): ObjectBlock[] {
+export function getBlockPlacements(db: Database, objectID: ObjID): BlockPlacement[] {
     validateObject(db, objectID);
     const rows = db.query(`
         WITH RECURSIVE placements(blockID, parentBlockID, position, path) AS (
@@ -366,8 +366,8 @@ export function getObjectBlocks(db: Database, objectID: ObjID): ObjectBlock[] {
  * @param blockID - The placed block to remove
  * @returns True if the placement was successfully deleted
  */
-export function deleteObjectBlock(db: Database, objectID: ObjID, blockID: BlockID): boolean {
-    return deleteObjectBlocks(db, objectID, [blockID]) > 0;
+export function deleteBlockPlacement(db: Database, objectID: ObjID, blockID: BlockID): boolean {
+    return deleteBlockPlacements(db, objectID, [blockID]) > 0;
 }
 
 /**
@@ -377,7 +377,7 @@ export function deleteObjectBlock(db: Database, objectID: ObjID, blockID: BlockI
  * @param blockIDs - The placement roots to remove
  * @returns The number of explicitly deleted placement roots
  */
-export function deleteObjectBlocks(db: Database, objectID: ObjID, blockIDs: BlockID[]): number {
+export function deleteBlockPlacements(db: Database, objectID: ObjID, blockIDs: BlockID[]): number {
     validateObject(db, objectID);
     const ids = [...new Set(blockIDs)];
 
@@ -409,7 +409,7 @@ export function deleteObjectBlocks(db: Database, objectID: ObjID, blockIDs: Bloc
  * @param objectID - The object whose blocks should be synchronized
  * @param blocks - The complete desired block compilation
  */
-export function syncObjectBlocks(db: Database, objectID: ObjID, blocks: ObjectBlock[]): void {
+export function syncBlockPlacements(db: Database, objectID: ObjID, blocks: BlockPlacement[]): void {
     validateObject(db, objectID);
     const desiredPlacements = validateObjectBlockPlacementBatch(blocks);
     validateObjectBlockPlacementTree(objectID, desiredPlacements);
@@ -478,14 +478,14 @@ export function syncObjectBlocks(db: Database, objectID: ObjID, blocks: ObjectBl
 // MARK: -- Internal Validation Helpers
 
 /** Validates a canonical block. */
-function validateBlock(block: Block): void {
+function validateBlock(block: StoredBlock): void {
     if (!block.id.startsWith(`${BlockPrefix}_`)) {
         throw new Error(`Invalid block id: ${block.id}`);
     }
 }
 
 /** Validates a canonical block batch and returns its unique IDs. */
-function validateBlockBatch(blocks: Block[]): Set<BlockID> {
+function validateBlockBatch(blocks: StoredBlock[]): Set<BlockID> {
     const ids = new Set<BlockID>();
 
     for (const block of blocks) {
@@ -692,7 +692,7 @@ function vacatePlacementPositions(db: Database, objectID: ObjID, blockIDs: Block
 }
 
 /** Maps a canonical block to named SQLite parameters. */
-function blockParameters(block: Block): Record<string, string> {
+function blockParameters(block: StoredBlock): Record<string, string> {
     return {
         $id: block.id,
         $content: block.content,

@@ -1,4 +1,4 @@
-import type { ObjectBlock } from "./block";
+import type { BlockPlacement } from "./block";
 import type { DatabaseID } from "./database";
 import type { SiloID } from "./silo";
 
@@ -12,6 +12,6 @@ export interface ObjMetadata {
     properties?: Record<string, unknown>;
 }
 
-export interface Obj extends ObjMetadata {
-    blocks: ObjectBlock[];
+export interface StoredObject extends ObjMetadata {
+    blocks: BlockPlacement[];
 }

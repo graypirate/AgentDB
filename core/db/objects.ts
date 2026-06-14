@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 
-import { getObjectBlocks, syncObjectBlocks } from "./blocks";
-import type { ObjMetadata, Obj, ObjID } from "../types/object";
+import { getBlockPlacements, syncBlockPlacements } from "./blocks";
+import type { ObjMetadata, ObjID, StoredObject } from "../types/object";
 import { DatabasePrefix, ObjectPrefix, SiloPrefix } from "../utils/id";
 
 type ObjectRow = {
@@ -16,10 +16,10 @@ type ObjectRow = {
  * @param db - The database containing the object
  * @param metadata - The object metadata to insert
  */
-export function insertObject(db: Database, metadata: ObjMetadata): void {
+export function insertStoredObject(db: Database, metadata: ObjMetadata): void {
     validateObjectMetadata(db, metadata);
 
-    if (isObject(db, metadata.id)) {
+    if (isStoredObject(db, metadata.id)) {
         throw new Error(`Object already exists: ${metadata.id}`);
     }
 
@@ -64,12 +64,12 @@ export function getObjectMetadata(db: Database, ObjectID: ObjID): ObjMetadata {
  * Reads an object's metadata and its blocks.
  * @param db - The database containing the object
  * @param ObjectID - The ID of the object to read
- * @returns The full Obj at the specified ID
+ * @returns The stored object at the specified ID
  */
-export function getObject(db: Database, ObjectID: ObjID): Obj {
+export function getStoredObject(db: Database, ObjectID: ObjID): StoredObject {
     return {
         ...getObjectMetadata(db, ObjectID),
-        blocks: getObjectBlocks(db, ObjectID),
+        blocks: getBlockPlacements(db, ObjectID),
     };
 }
 
@@ -79,7 +79,7 @@ export function getObject(db: Database, ObjectID: ObjID): Obj {
  * @param metadata - The object metadata to update
  */
 export function updateObjectMetadata(db: Database, metadata: ObjMetadata): void {
-    if (!isObject(db, metadata.id)) {
+    if (!isStoredObject(db, metadata.id)) {
         throw new Error(`Object not found: ${metadata.id}`);
     }
 
@@ -99,10 +99,10 @@ export function updateObjectMetadata(db: Database, metadata: ObjMetadata): void 
  * @param db - The database containing the object
  * @param object - The object to update
  */
-export function updateObject(db: Database, object: Obj): void {
+export function updateStoredObject(db: Database, object: StoredObject): void {
     const update = db.transaction(() => {
         updateObjectMetadata(db, object);
-        syncObjectBlocks(db, object.id, object.blocks);
+        syncBlockPlacements(db, object.id, object.blocks);
     });
 
     update();
@@ -114,7 +114,7 @@ export function updateObject(db: Database, object: Obj): void {
  * @param ObjectID - The object ID to delete
  * @returns True if the object was successfully deleted
  */
-export function deleteObject(db: Database, ObjectID: ObjID): boolean {
+export function deleteStoredObject(db: Database, ObjectID: ObjID): boolean {
     return db.query("DELETE FROM objects WHERE id = $id").run({ $id: ObjectID }).changes > 0;
 }
 
@@ -126,7 +126,7 @@ export function deleteObject(db: Database, ObjectID: ObjID): boolean {
  * @param ObjectID - The object ID to check
  * @returns True if the ID is an object
  */
-export function isObject(db: Database, ObjectID: ObjID): boolean {
+export function isStoredObject(db: Database, ObjectID: ObjID): boolean {
     return db.query("SELECT 1 FROM objects WHERE id = $id").get({ $id: ObjectID }) !== null;
 }
 

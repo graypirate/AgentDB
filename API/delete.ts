@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 
-import { deleteBlock as deleteStoredBlock } from "../core/db/blocks";
-import { deleteObject as deleteStoredObject } from "../core/db/objects";
+import { deleteStoredBlock } from "../core/db/blocks";
+import { deleteStoredObject } from "../core/db/objects";
 import { deleteSilo as deleteStoredSilo } from "../core/db/silos";
 import type { BlockID } from "../core/types/block";
 import type { ObjID } from "../core/types/object";

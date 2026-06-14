@@ -1,12 +1,13 @@
 import type { Database } from "bun:sqlite";
 
-import { insertBlock, isBlock } from "../core/db/blocks";
-import { insertObject, isObject } from "../core/db/objects";
+import { insertStoredBlock, isStoredBlock } from "../core/db/blocks";
+import { insertStoredObject, isStoredObject } from "../core/db/objects";
 import { insertSilo, isSilo } from "../core/db/silos";
-import type { Block } from "../core/types/block";
-import type { Obj } from "../core/types/object";
+import type { StoredBlock } from "../core/types/block";
+import type { StoredObject } from "../core/types/object";
 import type { SiloMetadata } from "../core/types/silo";
 import { createBlockID, createObjID, createSiloID } from "../core/utils/id";
+import type { Block, Obj } from "./types";
 
 type Properties = Record<string, unknown>;
 
@@ -33,16 +34,19 @@ export function createObject(
     name: string,
     properties: Properties = {},
 ): Obj {
-    const object: Obj = {
-        id: createAvailableID(createObjID, (id) => isObject(db, id)),
+    const object: StoredObject = {
+        id: createAvailableID(createObjID, (id) => isStoredObject(db, id)),
         parentID,
         name,
         properties,
         blocks: [],
     };
 
-    insertObject(db, object);
-    return object;
+    insertStoredObject(db, object);
+    return {
+        ...object,
+        blocks: [],
+    };
 }
 
 export function createBlock(
@@ -50,13 +54,13 @@ export function createBlock(
     content: string,
     properties: Properties = {},
 ): Block {
-    const block: Block = {
-        id: createAvailableID(createBlockID, (id) => isBlock(db, id)),
+    const block: StoredBlock = {
+        id: createAvailableID(createBlockID, (id) => isStoredBlock(db, id)),
         content,
         properties,
     };
 
-    insertBlock(db, block);
+    insertStoredBlock(db, block);
     return block;
 }
 

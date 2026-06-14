@@ -1,5 +1,5 @@
 import type { DatabaseID } from "./database";
-import type { Obj } from "../types/object"
+import type { StoredObject } from "./object";
 
 export type SiloID = string;
 
@@ -13,6 +13,6 @@ export interface SiloMetadata {
 
 export interface Silo {
     frontmatter: SiloMetadata;
-    objects: Obj[];
+    objects: StoredObject[];
     silos: Silo[];
 }

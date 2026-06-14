@@ -6,12 +6,12 @@ export interface BlockMetadata {
     properties?: Record<string, unknown>;
 }
 
-export interface Block extends BlockMetadata {
+export interface StoredBlock extends BlockMetadata {
     content: string;
 }
 
-// ObjectBlock represents a Block that is part of an Object, with an optional parentBlockID and a position within its parent
-export interface ObjectBlock extends Block {
+// Represents a block's stored placement within an object.
+export interface BlockPlacement extends StoredBlock {
     parentBlockID?: BlockID;
     position: number;
 }
