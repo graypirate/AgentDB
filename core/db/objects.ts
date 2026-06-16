@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { getBlockPlacements, syncBlockPlacements } from "./blocks";
 import type { BlockID } from "../types/block";
 import type { ObjMetadata, ObjID } from "../types/object";
-import { DatabasePrefix, ObjectPrefix, SiloPrefix } from "../utils/id";
+import { DatabasePrefix, ObjectPrefix } from "../utils/id";
 import type { StoredObject } from "./types";
 
 type ObjectRow = {
@@ -147,7 +147,7 @@ function validateObjectMetadata(db: Database, metadata: ObjMetadata): void {
     validateParent(db, metadata.parentID);
 }
 
-/** Validates that an object's parent is an existing database or silo. */
+/** Validates that an object's parent is the existing database. */
 function validateParent(db: Database, parentID: string): void {
     if (parentID.startsWith(`${DatabasePrefix}_`)) {
         if (!db.query('SELECT 1 FROM "database" WHERE id = $id').get({ $id: parentID })) {
@@ -156,14 +156,7 @@ function validateParent(db: Database, parentID: string): void {
         return;
     }
 
-    if (parentID.startsWith(`${SiloPrefix}_`)) {
-        if (!db.query("SELECT 1 FROM silos WHERE id = $id").get({ $id: parentID })) {
-            throw new Error(`Silo parent not found: ${parentID}`);
-        }
-        return;
-    }
-
-    throw new Error(`Object parent must be a database or silo: ${parentID}`);
+    throw new Error(`Object parent must be a database: ${parentID}`);
 }
 
 /** Maps object metadata to named SQLite parameters. */

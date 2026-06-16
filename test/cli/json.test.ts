@@ -6,7 +6,7 @@ import { parseWriteInput } from "../../CLI/json.ts";
 describe("CLI JSON validation", () => {
     test("validates recursive object writes using the public API shape", () => {
         expect(parseWriteInput(JSON.stringify({
-            parentID: "s_parent",
+            parentID: "d_parent",
             name: "Example",
             blocks: [{
                 content: "Parent",
@@ -20,7 +20,7 @@ describe("CLI JSON validation", () => {
         }))).toEqual({
             entity: "object",
             value: {
-                parentID: "s_parent",
+                parentID: "d_parent",
                 name: "Example",
                 blocks: [{
                     content: "Parent",

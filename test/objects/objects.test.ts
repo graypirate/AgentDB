@@ -28,19 +28,9 @@ afterEach(() => {
     db = undefined;
 });
 
-test("object operations persist caller IDs under database and silo parents", () => {
+test("object operations persist caller IDs under database parents", () => {
     db = initDatabase(":memory:", "Test Database");
     const databaseID = getDatabaseMetadata(db).id;
-    const siloID = "s_projects";
-
-    db.query(`
-        INSERT INTO silos (id, parent_id, name, properties)
-        VALUES ($id, $parentID, $name, '{}')
-    `).run({
-        $id: siloID,
-        $parentID: databaseID,
-        $name: "Projects",
-    });
 
     insertStoredObject(db, {
         id: "o_root",
@@ -49,11 +39,6 @@ test("object operations persist caller IDs under database and silo parents", () 
         properties: {
             scope: "database",
         },
-    });
-    insertStoredObject(db, {
-        id: "o_nested",
-        parentID: siloID,
-        name: "Nested Object",
     });
 
     expect(getObjectMetadata(db, "o_root")).toEqual({
@@ -64,7 +49,6 @@ test("object operations persist caller IDs under database and silo parents", () 
             scope: "database",
         },
     });
-    expect(getObjectMetadata(db, "o_nested").parentID).toBe(siloID);
     expect(isStoredObject(db, "o_root")).toBe(true);
     expect(() => insertStoredObject(db!, {
         id: "o_root",
@@ -73,24 +57,29 @@ test("object operations persist caller IDs under database and silo parents", () 
     })).toThrow("Object already exists");
     expect(() => insertStoredObject(db!, {
         id: "o_missing_parent",
-        parentID: "s_missing",
+        parentID: "x_missing",
         name: "Missing Parent",
-    })).toThrow("Silo parent not found");
+    })).toThrow("Object parent must be a database");
+    expect(() => insertStoredObject(db!, {
+        id: "o_missing_database",
+        parentID: "d_missing",
+        name: "Missing Database",
+    })).toThrow("Database parent not found");
 
     updateObjectMetadata(db, {
         id: "o_root",
-        parentID: siloID,
+        parentID: databaseID,
         name: "Moved Object",
         properties: {
-            scope: "silo",
+            scope: "updated",
         },
     });
     expect(getObjectMetadata(db, "o_root")).toEqual({
         id: "o_root",
-        parentID: siloID,
+        parentID: databaseID,
         name: "Moved Object",
         properties: {
-            scope: "silo",
+            scope: "updated",
         },
     });
 });

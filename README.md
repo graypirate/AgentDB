@@ -1,6 +1,6 @@
 # AgentDB
 
-AgentDB is a local SQLite store for silos, objects, and reusable blocks. The API
+AgentDB is a local SQLite store for objects and reusable blocks. The API
 exposes objects as recursive block trees, while SQLite placement details remain
 internal.
 
@@ -26,7 +26,6 @@ Every command requires an explicit database path. Entity types are inferred
 from their ID prefixes:
 
 - `d_`: database
-- `s_`: silo
 - `o_`: object
 - `b_`: block
 
@@ -39,22 +38,16 @@ agentdb init --database ./workspace.sqlite --name "Workspace"
 ```
 
 Initialization returns the database metadata, including the generated database
-ID required when creating top-level silos or objects.
+ID required when creating objects.
 
 ### Quick Creation
 
-Create silos, empty objects, and standalone blocks using flags:
+Create empty objects and standalone blocks using flags:
 
 ```bash
-agentdb create silo \
-  --database ./workspace.sqlite \
-  --parent d_example \
-  --name "Projects" \
-  --property 'status="active"'
-
 agentdb create object \
   --database ./workspace.sqlite \
-  --parent s_example \
+  --parent d_example \
   --name "CLI Implementation" \
   --property priority=1
 
@@ -79,7 +72,7 @@ or a standalone block:
 ```bash
 agentdb write --database ./workspace.sqlite <<'JSON'
 {
-  "parentID": "s_example",
+  "parentID": "d_example",
   "name": "AgentDB Architecture",
   "properties": {
     "status": "active"
@@ -125,7 +118,6 @@ that object's placement tree, but their canonical block records remain stored.
 ```bash
 agentdb read o_example --database ./workspace.sqlite
 agentdb list d_example --database ./workspace.sqlite
-agentdb list s_example --database ./workspace.sqlite
 agentdb list o_example --database ./workspace.sqlite
 agentdb list b_example --database ./workspace.sqlite --object o_example
 ```
@@ -135,7 +127,7 @@ accepted by `write`, allowing direct read-edit-write round trips.
 
 `list` returns metadata and direct children:
 
-- Databases and silos list their direct silo and object IDs.
+- Databases list their direct object IDs.
 - Objects list their top-level block IDs.
 - Blocks list metadata only unless `--object` is supplied.
 - A block listed with `--object` also returns its ancestors and direct children
@@ -152,11 +144,10 @@ agentdb search "recursive trees" --database ./workspace.sqlite --type block
 
 agentdb delete b_example --database ./workspace.sqlite
 agentdb delete o_example --database ./workspace.sqlite
-agentdb delete s_example --database ./workspace.sqlite
 ```
 
-Search checks silo and object names and properties, plus block content and
-properties. Use `--type silo|object|block` to restrict results.
+Search checks object names and properties, plus block content and properties.
+Use `--type object|block` to restrict results.
 
 Delete returns `true` when the entity existed and was deleted. Database-file
 deletion is intentionally unsupported by the CLI.
@@ -179,8 +170,8 @@ stdout.
 ## Object Type Boundary
 
 `core/types` defines the public entity shapes exported by the API. Universal
-metadata interfaces are extended by `Block`, recursive `ObjectBlock`, `Obj`,
-and `Silo` types.
+metadata interfaces are extended by `Block`, recursive `ObjectBlock`, and
+`Obj` types.
 
 Storage-only `StoredObject` and `StoredObjectBlock` types live in `core/db`.
 They represent the flat relational form used by SQLite and are not exported by

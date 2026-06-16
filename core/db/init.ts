@@ -4,12 +4,12 @@ import type { DBMetadata } from "../types/database";
 import { createDatabaseID } from "../utils/id";
 import schema from "./schema.sql" with { type: "text" };
 
-export const SchemaVersion = 0;
+export const SchemaVersion = "0.1.0";
 
 type DatabaseRow = {
     id: string;
     name: string | null;
-    schemaVersion: number;
+    schemaVersion: string;
 };
 
 /**

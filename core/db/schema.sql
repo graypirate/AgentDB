@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS "database" (
     id TEXT PRIMARY KEY,
     name TEXT,
-    schema_version INTEGER NOT NULL
+    schema_version TEXT NOT NULL
 );
 
 CREATE TRIGGER IF NOT EXISTS database_singleton_insert
@@ -10,14 +10,6 @@ WHEN (SELECT COUNT(*) FROM "database") >= 1
 BEGIN
     SELECT RAISE(ABORT, 'database metadata already exists');
 END;
-
-CREATE TABLE IF NOT EXISTS silos (
-    id TEXT PRIMARY KEY,
-    parent_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    properties TEXT NOT NULL DEFAULT '{}'
-        CHECK (json_valid(properties))
-);
 
 CREATE TABLE IF NOT EXISTS objects (
     id TEXT PRIMARY KEY,
@@ -54,9 +46,6 @@ CREATE TABLE IF NOT EXISTS object_blocks (
         ON DELETE CASCADE
         DEFERRABLE INITIALLY DEFERRED
 );
-
-CREATE INDEX IF NOT EXISTS silos_parent_id_idx
-ON silos(parent_id);
 
 CREATE INDEX IF NOT EXISTS objects_parent_id_idx
 ON objects(parent_id);

@@ -36,10 +36,10 @@ function validateObjectWrite(value: JSONObject): ObjectWrite {
     rejectUnknownFields(value, objectFields, "$");
     const id = optionalID(value, "id", "o_", "$.id");
     const parentID = requiredString(value, "parentID", "$.parentID");
-    if (!parentID.startsWith("d_") && !parentID.startsWith("s_")) {
+    if (!parentID.startsWith("d_")) {
         throw inputError(
             "INVALID_PARENT_ID",
-            `Object parent must be a database or silo ID: ${parentID}`,
+            `Object parent must be a database ID: ${parentID}`,
             { path: "$.parentID" },
         );
     }

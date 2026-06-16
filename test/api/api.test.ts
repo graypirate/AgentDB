@@ -7,18 +7,15 @@ import { join } from "node:path";
 import {
     createBlock,
     createObject,
-    createSilo,
-    deleteSilo,
+    deleteObject,
     initializeDatabase,
     listBlock,
     listDatabase,
     listObject,
-    listSilo,
     openDatabase,
     readBlock,
     readDatabase,
     readObject,
-    readSilo,
     search,
     writeBlock,
     writeObject,
@@ -57,21 +54,14 @@ test("initializes and opens an existing database", () => {
 test("quick create functions generate IDs and return public domain types", () => {
     db = initializeDatabase(":memory:");
     const databaseID = readDatabase(db).id;
-    const silo = createSilo(db, databaseID, "Projects", { active: true });
-    const object = createObject(db, silo.id, "AgentDB");
+    const object = createObject(db, databaseID, "AgentDB", { active: true });
     const block = createBlock(db, "Standalone", { kind: "text" });
 
-    expect(silo).toEqual({
-        id: expect.stringMatching(/^s_/),
-        parentID: databaseID,
-        name: "Projects",
-        properties: { active: true },
-    });
     expect(object).toEqual({
         id: expect.stringMatching(/^o_/),
-        parentID: silo.id,
+        parentID: databaseID,
         name: "AgentDB",
-        properties: {},
+        properties: { active: true },
         blocks: [],
     });
     expect(block).toEqual({
@@ -79,7 +69,6 @@ test("quick create functions generate IDs and return public domain types", () =>
         content: "Standalone",
         properties: { kind: "text" },
     });
-    expect(readSilo(db, silo.id)).toEqual(silo);
     expect(readObject(db, object.id)).toEqual(object);
     expect(readBlock(db, block.id)).toEqual(block);
 });
@@ -198,9 +187,8 @@ test("writeObject completely replaces placements and globally updates reused blo
 test("entity-specific list functions return metadata and direct IDs", () => {
     db = initializeDatabase(":memory:");
     const databaseID = readDatabase(db).id;
-    const silo = createSilo(db, databaseID, "Projects");
     const object = writeObject(db, {
-        parentID: silo.id,
+        parentID: databaseID,
         name: "Object",
         properties: {},
         blocks: [{
@@ -218,18 +206,12 @@ test("entity-specific list functions return metadata and direct IDs", () => {
 
     expect(listDatabase(db)).toEqual({
         metadata: readDatabase(db),
-        silos: [silo.id],
-        objects: [],
-    });
-    expect(listSilo(db, silo.id)).toEqual({
-        metadata: silo,
-        silos: [],
         objects: [object.id],
     });
     expect(listObject(db, object.id)).toEqual({
         metadata: {
             id: object.id,
-            parentID: silo.id,
+            parentID: databaseID,
             name: "Object",
             properties: {},
         },
@@ -246,13 +228,11 @@ test("entity-specific list functions return metadata and direct IDs", () => {
     });
 });
 
-test("recursive silo deletion preserves canonical blocks", () => {
+test("object deletion preserves canonical blocks", () => {
     db = initializeDatabase(":memory:");
     const databaseID = readDatabase(db).id;
-    const root = createSilo(db, databaseID, "Root");
-    const child = createSilo(db, root.id, "Child");
     const object = writeObject(db, {
-        parentID: child.id,
+        parentID: databaseID,
         name: "Nested",
         properties: {},
         blocks: [{
@@ -263,8 +243,7 @@ test("recursive silo deletion preserves canonical blocks", () => {
     });
     const blockID = object.blocks[0]!.id;
 
-    expect(deleteSilo(db, root.id)).toBe(true);
-    expect(() => readSilo(db!, child.id)).toThrow();
+    expect(deleteObject(db, object.id)).toBe(true);
     expect(() => readObject(db!, object.id)).toThrow();
     expect(readBlock(db, blockID).content).toBe("Preserved");
 });
@@ -272,14 +251,12 @@ test("recursive silo deletion preserves canonical blocks", () => {
 test("search supports an optional entity type parameter", () => {
     db = initializeDatabase(":memory:");
     const databaseID = readDatabase(db).id;
-    const silo = createSilo(db, databaseID, "Projects", { tag: "needle" });
     const object = createObject(db, databaseID, "Needle object");
     const block = createBlock(db, "Needle block");
 
     expect(search(db, "needle").map((result) => result.id)).toEqual([
         block.id,
         object.id,
-        silo.id,
     ]);
     expect(search(db, "needle", "block")).toEqual([{
         type: "block",

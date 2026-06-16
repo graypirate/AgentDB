@@ -14,7 +14,7 @@ describe("CLI argument parsing", () => {
             "--database",
             "agent.db",
             "--parent",
-            "s_parent",
+            "d_parent",
             "--name",
             "Example",
             "--property",
@@ -25,7 +25,7 @@ describe("CLI argument parsing", () => {
             action: "create",
             entity: "object",
             database: "agent.db",
-            parentID: "s_parent",
+            parentID: "d_parent",
             name: "Example",
             propertyValues: ["count=2", "note=plain text"],
         });
@@ -83,7 +83,6 @@ describe("CLI argument parsing", () => {
 
     test("infers every entity type from its ID prefix", () => {
         expect(inferEntityType("d_example")).toBe("database");
-        expect(inferEntityType("s_example")).toBe("silo");
         expect(inferEntityType("o_example")).toBe("object");
         expect(inferEntityType("b_example")).toBe("block");
         expectInputError(() => inferEntityType("x_example"), "INVALID_ID");
@@ -93,6 +92,19 @@ describe("CLI argument parsing", () => {
         expectInputError(
             () => parseCommand(["update", "o_example", "--database", "agent.db"]),
             "INVALID_COMMAND",
+        );
+        expectInputError(
+            () => parseCommand([
+                "create",
+                "folder",
+                "--database",
+                "agent.db",
+                "--parent",
+                "d_parent",
+                "--name",
+                "Invalid",
+            ]),
+            "INVALID_ENTITY_TYPE",
         );
         expectInputError(
             () => parseCommand([

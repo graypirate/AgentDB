@@ -4,5 +4,5 @@ export type DatabaseID = string;
 export interface DBMetadata {
     readonly id: DatabaseID;
     name?: string;
-    schemaVersion: number;
+    schemaVersion: string;
 }

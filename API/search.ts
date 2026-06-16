@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-export type SearchType = "silo" | "object" | "block";
+export type SearchType = "object" | "block";
 
 export interface SearchResult {
     type: SearchType;
@@ -16,19 +16,11 @@ export function search(
     type?: SearchType,
 ): SearchResult[] {
     const types: SearchType[] = type === undefined
-        ? ["silo", "object", "block"]
+        ? ["object", "block"]
         : [type];
     const rows: SearchRow[] = [];
     const parameters = { $query: query };
 
-    if (types.includes("silo")) {
-        rows.push(...db.query(`
-            SELECT 'silo' AS type, id, name AS label
-            FROM silos
-            WHERE instr(lower(name), lower($query)) > 0
-               OR instr(lower(properties), lower($query)) > 0
-        `).all(parameters) as SearchRow[]);
-    }
     if (types.includes("object")) {
         rows.push(...db.query(`
             SELECT 'object' AS type, id, name AS label

@@ -1,13 +1,13 @@
 import { CLIInputError } from "./errors.ts";
 
-export type EntityType = "database" | "silo" | "object" | "block";
+export type EntityType = "database" | "object" | "block";
 export type SearchType = Exclude<EntityType, "database">;
 
 export type CLICommand =
     | { action: "init"; database: string; name?: string }
     | {
         action: "create";
-        entity: "silo" | "object";
+        entity: "object";
         database: string;
         parentID: string;
         name: string;
@@ -118,7 +118,7 @@ export function parseCommand(argv: string[]): CLICommand {
             requirePositionals(
                 parsed,
                 2,
-                "agentdb search QUERY --database PATH [--type silo|object|block]",
+                "agentdb search QUERY --database PATH [--type object|block]",
             );
             allowOptions(parsed, ["database", "type"]);
             const type = optionalSingleOption(parsed, "type");
@@ -126,7 +126,7 @@ export function parseCommand(argv: string[]): CLICommand {
                 throw inputError(
                     "INVALID_SEARCH_TYPE",
                     `Invalid search type: ${type}`,
-                    { allowed: ["silo", "object", "block"] },
+                    { allowed: ["object", "block"] },
                 );
             }
             return {
@@ -146,8 +146,6 @@ export function inferEntityType(id: string): EntityType {
     switch (id.slice(0, 2)) {
         case "d_":
             return "database";
-        case "s_":
-            return "silo";
         case "o_":
             return "object";
         case "b_":
@@ -161,20 +159,19 @@ function parseCreate(parsed: ParsedArguments, database: string): CLICommand {
     requirePositionals(
         parsed,
         2,
-        "agentdb create silo|object|block --database PATH [options]",
+        "agentdb create object|block --database PATH [options]",
     );
 
     const entity = parsed.positionals[1];
     switch (entity) {
-        case "silo":
         case "object": {
             allowOptions(parsed, ["database", "parent", "name", "property"]);
             const parentID = requireSingleOption(parsed, "parent");
             const parentType = inferEntityType(parentID);
-            if (parentType !== "database" && parentType !== "silo") {
+            if (parentType !== "database") {
                 throw inputError(
                     "INVALID_PARENT_ID",
-                    `Parent must be a database or silo ID: ${parentID}`,
+                    `Parent must be a database ID: ${parentID}`,
                 );
             }
             return {
@@ -201,7 +198,7 @@ function parseCreate(parsed: ParsedArguments, database: string): CLICommand {
             throw inputError(
                 "INVALID_ENTITY_TYPE",
                 `Unknown create entity type: ${entity ?? ""}`,
-                { allowed: ["silo", "object", "block"] },
+                { allowed: ["object", "block"] },
             );
     }
 }
@@ -289,7 +286,7 @@ function requireEntityType(id: string, expected: EntityType, code = "INVALID_ID"
 }
 
 function isSearchType(value: string): value is SearchType {
-    return value === "silo" || value === "object" || value === "block";
+    return value === "object" || value === "block";
 }
 
 function inputError(code: string, message: string, details?: unknown): CLIInputError {

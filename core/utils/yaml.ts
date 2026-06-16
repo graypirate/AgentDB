@@ -1,18 +1,17 @@
 import YAML from "yaml";
 
 import type { ObjMetadata } from "../types/object";
-import type { SiloMetadata } from "../types/silo";
 
 // HELPER - convert frontmatter to a dictionary
-function frontmatterToDict(frontmatter: ObjMetadata | SiloMetadata): Record<string, unknown> {
+function frontmatterToDict(frontmatter: ObjMetadata): Record<string, unknown> {
     return {
         id: frontmatter.id,
         name: frontmatter.name,
-        properties: frontmatter.properties
+        properties: frontmatter.properties,
     };
 }
 
-export function renderFrontmatter(frontmatter: ObjMetadata | SiloMetadata): string {
+export function renderFrontmatter(frontmatter: ObjMetadata): string {
     const dict = frontmatterToDict(frontmatter);
     return `---\n${YAML.stringify(dict)}---\n`;
 }

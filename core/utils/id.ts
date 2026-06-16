@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 export const ObjectPrefix: string = "o";
-export const SiloPrefix: string = "s";
 export const BlockPrefix: string = "b";
 export const DatabasePrefix: string = "d";
 
@@ -9,10 +8,6 @@ export const DatabasePrefix: string = "d";
 function createID(prefix: string): string {
     const random = randomUUID().replaceAll("-", "");
     return `${prefix}_${random}`;
-}
-
-export function createSiloID(): string {
-    return createID(SiloPrefix);
 }
 
 export function createObjID(): string {

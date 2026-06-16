@@ -3,24 +3,15 @@ import type { Database } from "bun:sqlite";
 import { getBlockMetadata, getBlockPlacements, getStoredBlock } from "../core/db/blocks";
 import { getDatabaseMetadata } from "../core/db/init";
 import { getObjectMetadata, getStoredObject } from "../core/db/objects";
-import { getSilo } from "../core/db/silos";
 import type { Block, BlockID, BlockMetadata } from "../core/types/block";
-import type { DBMetadata, DatabaseID } from "../core/types/database";
+import type { DBMetadata } from "../core/types/database";
 import type { Obj, ObjID, ObjMetadata } from "../core/types/object";
-import type { SiloID, SiloMetadata } from "../core/types/silo";
 import { expandStoredObject } from "./types";
 
 // MARK: List interfaces
 
 export interface DatabaseList {
     metadata: DBMetadata;
-    silos: SiloID[];
-    objects: ObjID[];
-}
-
-export interface SiloList {
-    metadata: SiloMetadata;
-    silos: SiloID[];
     objects: ObjID[];
 }
 
@@ -42,10 +33,6 @@ export function readDatabase(db: Database): DBMetadata {
     return getDatabaseMetadata(db);
 }
 
-export function readSilo(db: Database, siloID: SiloID): SiloMetadata {
-    return getSilo(db, siloID);
-}
-
 export function readObject(db: Database, objectID: ObjID): Obj {
     return expandStoredObject(getStoredObject(db, objectID));
 }
@@ -60,14 +47,7 @@ export function listDatabase(db: Database): DatabaseList {
     const metadata = getDatabaseMetadata(db);
     return {
         metadata,
-        ...readContainerChildren(db, metadata.id),
-    };
-}
-
-export function listSilo(db: Database, siloID: SiloID): SiloList {
-    return {
-        metadata: getSilo(db, siloID),
-        ...readContainerChildren(db, siloID),
+        objects: readDatabaseObjects(db, metadata.id),
     };
 }
 
@@ -126,17 +106,11 @@ export function listBlock(
 
 // MARK: Helper functions
 
-/** Reads the direct silo and object children of a database or silo. */
-function readContainerChildren(
+/** Reads the direct objects parented by a database. */
+function readDatabaseObjects(
     db: Database,
-    parentID: DatabaseID | SiloID,
-): { silos: SiloID[]; objects: ObjID[] } {
-    const silos = db.query(`
-        SELECT id
-        FROM silos
-        WHERE parent_id = $parentID
-        ORDER BY name, id
-    `).all({ $parentID: parentID }) as { id: SiloID }[];
+    parentID: string,
+): ObjID[] {
     const objects = db.query(`
         SELECT id
         FROM objects
@@ -144,8 +118,5 @@ function readContainerChildren(
         ORDER BY name, id
     `).all({ $parentID: parentID }) as { id: ObjID }[];
 
-    return {
-        silos: silos.map((row) => row.id),
-        objects: objects.map((row) => row.id),
-    };
+    return objects.map((row) => row.id);
 }

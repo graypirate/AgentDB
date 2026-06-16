@@ -1,20 +1,16 @@
 import {
     createBlock,
     createObject,
-    createSilo,
     deleteBlock,
     deleteObject,
-    deleteSilo,
     initializeDatabase,
     listBlock,
     listDatabase,
     listObject,
-    listSilo,
     openDatabase,
     readBlock,
     readDatabase,
     readObject,
-    readSilo,
     search,
     writeBlock,
     writeObject,
@@ -48,13 +44,6 @@ export function dispatchCommand(command: CLICommand, writeInput?: WriteInput): u
         switch (command.action) {
             case "create": {
                 switch (command.entity) {
-                    case "silo":
-                        return createSilo(
-                            db,
-                            command.parentID,
-                            command.name,
-                            properties,
-                        );
                     case "object":
                         return createObject(
                             db,
@@ -115,8 +104,6 @@ function readEntity(db: Database, id: string): unknown {
     switch (inferEntityType(id)) {
         case "database":
             return readMatchingDatabase(db, id);
-        case "silo":
-            return readSilo(db, id);
         case "object":
             return readObject(db, id);
         case "block":
@@ -129,8 +116,6 @@ function listEntity(db: Database, id: string, objectID?: string): unknown {
         case "database":
             readMatchingDatabase(db, id);
             return listDatabase(db);
-        case "silo":
-            return listSilo(db, id);
         case "object":
             return listObject(db, id);
         case "block":
@@ -145,8 +130,6 @@ function deleteEntity(db: Database, id: string): boolean {
                 "UNSUPPORTED_DELETE",
                 "Database deletion is not supported",
             );
-        case "silo":
-            return deleteSilo(db, id);
         case "object":
             return deleteObject(db, id);
         case "block":

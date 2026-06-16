@@ -1,13 +1,9 @@
 # Database Schema
 
 One SQLite database file represents one database. The database contains one
-metadata row and separate tables for silos, objects, blocks, and object-block
-placements.
+metadata row and separate tables for objects, blocks, and object-block placements.
 
-Silos and objects retain required containment parents:
-
-- A silo parent is the database or another silo.
-- An object parent is the database or a silo.
+Objects retain a required database parent.
 
 Blocks are independent canonical content. The `object_blocks` table defines
 which blocks appear in an object, along with their object-specific nesting and
@@ -16,7 +12,6 @@ ordering.
 IDs are stable primary keys:
 
 - `d_` for databases
-- `s_` for silos
 - `o_` for objects
 - `b_` for blocks
 
@@ -26,30 +21,13 @@ IDs are stable primary keys:
 CREATE TABLE "database" (
     id TEXT PRIMARY KEY,
     name TEXT,
-    schema_version INTEGER NOT NULL
+    schema_version TEXT NOT NULL
 );
 ```
 
 The table contains exactly one row. The name is optional.
-New databases use schema version `2`. Initialization rejects databases whose
+New databases use schema version `0.1.0`. Initialization rejects databases whose
 metadata declares another version; migrations are not currently supported.
-
-## Silos
-
-```sql
-CREATE TABLE silos (
-    id TEXT PRIMARY KEY,
-    parent_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    properties TEXT NOT NULL DEFAULT '{}'
-        CHECK (json_valid(properties))
-);
-
-CREATE INDEX silos_parent_id_idx
-ON silos(parent_id);
-```
-
-`parent_id` must resolve to the database or another silo.
 
 ## Objects
 
@@ -66,8 +44,8 @@ CREATE INDEX objects_parent_id_idx
 ON objects(parent_id);
 ```
 
-`parent_id` must resolve to the database or a silo. Object content is compiled
-from placements in `object_blocks`.
+`parent_id` must resolve to the database. Object content is compiled from
+placements in `object_blocks`.
 
 ## Blocks
 
@@ -116,7 +94,6 @@ other canonical blocks.
 Direct entity lookup uses primary-key indexes:
 
 ```sql
-SELECT * FROM silos WHERE id = ?;
 SELECT * FROM objects WHERE id = ?;
 SELECT * FROM blocks WHERE id = ?;
 ```
@@ -124,7 +101,6 @@ SELECT * FROM blocks WHERE id = ?;
 Containment children use parent indexes:
 
 ```sql
-SELECT * FROM silos WHERE parent_id = ?;
 SELECT * FROM objects WHERE parent_id = ?;
 ```
 

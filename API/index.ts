@@ -20,8 +20,3 @@ export type {
     ObjID,
     ObjMetadata,
 } from "../core/types/object";
-export type {
-    Silo,
-    SiloID,
-    SiloMetadata,
-} from "../core/types/silo";

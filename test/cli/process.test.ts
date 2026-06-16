@@ -11,7 +11,6 @@ import type {
     Obj,
     ObjectList,
     SearchResult,
-    SiloMetadata,
 } from "../../API/index.ts";
 
 const cliPath = resolve(import.meta.dir, "../../CLI/index.ts");
@@ -38,27 +37,7 @@ describe("CLI process output", () => {
         expect(initialized.id).toStartWith("d_");
         expect(initialized).toMatchObject({
             name: "CLI Test",
-            schemaVersion: 2,
-        });
-
-        const silo = await successfulJSON<SiloMetadata>([
-            "create",
-            "silo",
-            "--database",
-            databasePath,
-            "--parent",
-            initialized.id,
-            "--name",
-            "Projects",
-            "--property",
-            'status="active"',
-            "--property",
-            "priority=2",
-        ]);
-        expect(silo.id).toStartWith("s_");
-        expect(silo).toMatchObject({
-            parentID: initialized.id,
-            properties: { status: "active", priority: 2 },
+            schemaVersion: "0.1.0",
         });
 
         const emptyObject = await successfulJSON<Obj>([
@@ -67,11 +46,19 @@ describe("CLI process output", () => {
             "--database",
             databasePath,
             "--parent",
-            silo.id,
+            initialized.id,
             "--name",
             "Empty",
+            "--property",
+            'status="active"',
+            "--property",
+            "priority=2",
         ]);
         expect(emptyObject.blocks).toEqual([]);
+        expect(emptyObject).toMatchObject({
+            parentID: initialized.id,
+            properties: { status: "active", priority: 2 },
+        });
 
         const quickBlock = await successfulJSON<Block>([
             "create",
@@ -91,7 +78,7 @@ describe("CLI process output", () => {
             "--database",
             databasePath,
         ], JSON.stringify({
-            parentID: silo.id,
+            parentID: initialized.id,
             name: "AgentDB",
             properties: { stage: "MVP" },
             blocks: [{
@@ -135,7 +122,7 @@ describe("CLI process output", () => {
         ])).toEqual({
             metadata: {
                 id: objectID,
-                parentID: silo.id,
+                parentID: initialized.id,
                 name: "AgentDB",
                 properties: { stage: "MVP" },
             },
@@ -165,7 +152,7 @@ describe("CLI process output", () => {
             "--database",
             databasePath,
         ]);
-        expect(databaseList.silos).toEqual([silo.id]);
+        expect(databaseList.objects).toEqual([objectID, emptyObject.id]);
 
         expect(await successfulJSON<boolean>([
             "delete",
