@@ -409,12 +409,23 @@ export function deleteBlockPlacements(db: Database, objectID: ObjID, blockIDs: B
  * @param db - The database containing the blocks
  * @param objectID - The object whose blocks should be synchronized
  * @param blocks - The complete desired block compilation
+ * @param requiredExistingBlockIDs - Block IDs that must already exist before sync
  */
-export function syncBlockPlacements(db: Database, objectID: ObjID, blocks: StoredObjectBlock[]): void {
+export function syncBlockPlacements(
+    db: Database,
+    objectID: ObjID,
+    blocks: StoredObjectBlock[],
+    requiredExistingBlockIDs: Iterable<BlockID> = [],
+): void {
     validateObject(db, objectID);
     const desiredPlacements = validateObjectBlockPlacementBatch(blocks);
     validateObjectBlockPlacementTree(objectID, desiredPlacements);
     const canonicalIDs = selectExistingBlockIDs(db, desiredPlacements.keys());
+    const missingRequiredID = [...requiredExistingBlockIDs].find((blockID) => !canonicalIDs.has(blockID));
+
+    if (missingRequiredID) {
+        throw new Error(`Block not found: ${missingRequiredID}`);
+    }
 
     const sync = db.transaction(() => {
         const insertBlockStatement = db.query(`

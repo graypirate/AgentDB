@@ -2,13 +2,11 @@ import type { Database } from "bun:sqlite";
 
 import {
     insertStoredBlock,
-    isStoredBlock,
     syncBlockPlacements,
     updateStoredBlock,
 } from "../core/db/blocks";
 import {
     insertStoredObject,
-    isStoredObject,
     updateStoredObject,
 } from "../core/db/objects";
 import type { StoredObject } from "../core/db/types";
@@ -33,7 +31,7 @@ export type ObjectWrite = Omit<Obj, "id" | "blocks"> & {
 
 export function writeBlock(db: Database, input: BlockWrite): Block {
     const block: Block = {
-        id: input.id ?? createAvailableBlockID(db),
+        id: input.id ?? createAvailableBlockID(),
         content: input.content,
         properties: input.properties ?? {},
     };
@@ -48,8 +46,8 @@ export function writeBlock(db: Database, input: BlockWrite): Block {
 }
 
 export function writeObject(db: Database, input: ObjectWrite): Obj {
-    const objectID = input.id ?? createAvailableObjectID(db);
-    const blocks = prepareBlocks(db, input.blocks);
+    const objectID = input.id ?? createAvailableObjectID();
+    const { blocks, explicitBlockIDs } = prepareBlocks(input.blocks);
     const placements = flattenObjectBlocks(blocks);
     const storedObject: StoredObject = {
         id: objectID,
@@ -62,9 +60,9 @@ export function writeObject(db: Database, input: ObjectWrite): Obj {
     const write = db.transaction(() => {
         if (input.id === undefined) {
             insertStoredObject(db, storedObject);
-            syncBlockPlacements(db, objectID, placements);
+            syncBlockPlacements(db, objectID, placements, explicitBlockIDs);
         } else {
-            updateStoredObject(db, storedObject);
+            updateStoredObject(db, storedObject, explicitBlockIDs);
         }
     });
 
@@ -80,21 +78,21 @@ export function writeObject(db: Database, input: ObjectWrite): Obj {
 
 /** Assigns IDs while producing public object blocks. */
 function prepareBlocks(
-    db: Database,
     roots: ObjectBlockWrite[],
-): ObjectBlock[] {
+): { blocks: ObjectBlock[]; explicitBlockIDs: Set<BlockID> } {
     const usedIDs = new Set<BlockID>();
+    const explicitBlockIDs = new Set<BlockID>();
 
     const visit = (
         children: ObjectBlockWrite[],
     ): ObjectBlock[] =>
         children.map((input) => {
-            const id = input.id ?? createAvailableBlockID(db, usedIDs);
+            const id = input.id ?? createAvailableBlockID(usedIDs);
             if (usedIDs.has(id)) {
                 throw new Error(`Duplicate block ID in object: ${id}`);
             }
-            if (input.id !== undefined && !isStoredBlock(db, id)) {
-                throw new Error(`Block not found: ${id}`);
+            if (input.id !== undefined) {
+                explicitBlockIDs.add(id);
             }
 
             usedIDs.add(id);
@@ -106,22 +104,21 @@ function prepareBlocks(
             };
         });
 
-    return visit(roots);
+    return {
+        blocks: visit(roots),
+        explicitBlockIDs,
+    };
 }
 
-/** Generates an object ID that is not already stored. */
-function createAvailableObjectID(db: Database): ObjID {
-    let id = createObjID();
-    while (isStoredObject(db, id)) {
-        id = createObjID();
-    }
-    return id;
+/** Generates an object ID. */
+function createAvailableObjectID(): ObjID {
+    return createObjID();
 }
 
 /** Generates a block ID that is neither stored nor reserved by the current write. */
-function createAvailableBlockID(db: Database, reserved: Set<BlockID> = new Set()): BlockID {
+function createAvailableBlockID(reserved: Set<BlockID> = new Set()): BlockID {
     let id = createBlockID();
-    while (reserved.has(id) || isStoredBlock(db, id)) {
+    while (reserved.has(id)) {
         id = createBlockID();
     }
     return id;

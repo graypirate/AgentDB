@@ -7,7 +7,7 @@ export const DatabasePrefix: string = "d";
 
 // HELPER: Creates a unique ID with the given prefix
 function createID(prefix: string): string {
-    const random = randomUUID().replaceAll("-", "").slice(0, 8);
+    const random = randomUUID().replaceAll("-", "");
     return `${prefix}_${random}`;
 }
 

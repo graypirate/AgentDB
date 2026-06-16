@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { getBlockPlacements, syncBlockPlacements } from "./blocks";
+import type { BlockID } from "../types/block";
 import type { ObjMetadata, ObjID } from "../types/object";
 import { DatabasePrefix, ObjectPrefix, SiloPrefix } from "../utils/id";
 import type { StoredObject } from "./types";
@@ -100,10 +101,14 @@ export function updateObjectMetadata(db: Database, metadata: ObjMetadata): void 
  * @param db - The database containing the object
  * @param object - The object to update
  */
-export function updateStoredObject(db: Database, object: StoredObject): void {
+export function updateStoredObject(
+    db: Database,
+    object: StoredObject,
+    requiredExistingBlockIDs: Iterable<BlockID> = [],
+): void {
     const update = db.transaction(() => {
         updateObjectMetadata(db, object);
-        syncBlockPlacements(db, object.id, object.blocks);
+        syncBlockPlacements(db, object.id, object.blocks, requiredExistingBlockIDs);
     });
 
     update();
