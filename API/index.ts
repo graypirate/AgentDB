@@ -12,10 +12,6 @@ export type {
     BlockMetadata,
 } from "../core/types/block";
 export type {
-    DatabaseID,
-    DBMetadata,
-} from "../core/types/database";
-export type {
     Entity,
     EntityID,
     EntityParentID,
@@ -27,3 +23,7 @@ export type {
     ObjID,
     ObjMetadata,
 } from "../core/types/object";
+export type {
+    WorkspaceID,
+    WorkspaceMetadata,
+} from "../core/types/workspace";

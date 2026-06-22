@@ -1,12 +1,12 @@
 import {
     create,
     deleteEntity as deleteAPIEntity,
-    initializeDatabase,
-    listDatabase,
+    initializeWorkspace,
     listEntity as listAPIEntity,
-    openDatabase,
-    readDatabase,
+    listWorkspace,
+    openWorkspace,
     readEntity as readAPIEntity,
+    readWorkspace,
     search,
     writeEntity,
 } from "../index.ts";
@@ -15,23 +15,26 @@ import { CLIInputError, CLIOperationError } from "./errors.ts";
 import type { WriteInput } from "./json.ts";
 import { parseProperties } from "./properties.ts";
 
-type Database = ReturnType<typeof openDatabase>;
+type WorkspaceDatabase = ReturnType<typeof openWorkspace>;
 
 export function dispatchCommand(command: CLICommand, writeInput?: WriteInput): unknown {
     if (command.action === "init") {
-        return withInitializedDatabase(command.database, command.name, readDatabase);
+        return withInitializedWorkspace(
+            command.workspace,
+            readWorkspace,
+        );
     }
 
     const properties = command.action === "create"
         ? parseProperties(command.propertyValues)
         : {};
 
-    let db: Database;
+    let db: WorkspaceDatabase;
     try {
-        db = openDatabase(command.database);
+        db = openWorkspace(command.workspace);
     } catch (error) {
-        throw operationError("DATABASE_OPEN_FAILED", error, {
-            path: command.database,
+        throw operationError("WORKSPACE_OPEN_FAILED", error, {
+            workspace: command.workspace,
         });
     }
 
@@ -77,16 +80,15 @@ export function dispatchCommand(command: CLICommand, writeInput?: WriteInput): u
     }
 }
 
-function withInitializedDatabase(
-    path: string,
-    name: string | undefined,
-    read: (db: Database) => unknown,
+function withInitializedWorkspace(
+    name: string,
+    read: (db: WorkspaceDatabase) => unknown,
 ): unknown {
-    let db: Database;
+    let db: WorkspaceDatabase;
     try {
-        db = initializeDatabase(path, name);
+        db = initializeWorkspace(name);
     } catch (error) {
-        throw operationError("DATABASE_INIT_FAILED", error, { path });
+        throw operationError("WORKSPACE_INIT_FAILED", error, { workspace: name });
     }
 
     try {
@@ -96,33 +98,33 @@ function withInitializedDatabase(
     }
 }
 
-function readCommandEntity(db: Database, id: string): unknown {
+function readCommandEntity(db: WorkspaceDatabase, id: string): unknown {
     switch (inferEntityType(id)) {
-        case "database":
-            return readMatchingDatabase(db, id);
+        case "workspace":
+            return readMatchingWorkspace(db, id);
         case "object":
         case "block":
             return readAPIEntity(db, id);
     }
 }
 
-function listCommandEntity(db: Database, id: string): unknown {
+function listCommandEntity(db: WorkspaceDatabase, id: string): unknown {
     switch (inferEntityType(id)) {
-        case "database":
-            readMatchingDatabase(db, id);
-            return listDatabase(db);
+        case "workspace":
+            readMatchingWorkspace(db, id);
+            return listWorkspace(db);
         case "object":
         case "block":
             return listAPIEntity(db, id);
     }
 }
 
-function deleteCommandEntity(db: Database, id: string): boolean {
+function deleteCommandEntity(db: WorkspaceDatabase, id: string): boolean {
     switch (inferEntityType(id)) {
-        case "database":
+        case "workspace":
             throw new CLIOperationError(
                 "UNSUPPORTED_DELETE",
-                "Database deletion is not supported",
+                "Workspace deletion is not supported",
             );
         case "object":
         case "block":
@@ -134,12 +136,12 @@ function createOptions(parentID: string | undefined): { parentID?: string } {
     return parentID === undefined ? {} : { parentID };
 }
 
-function readMatchingDatabase(db: Database, id: string): ReturnType<typeof readDatabase> {
-    const metadata = readDatabase(db);
+function readMatchingWorkspace(db: WorkspaceDatabase, id: string): ReturnType<typeof readWorkspace> {
+    const metadata = readWorkspace(db);
     if (metadata.id !== id) {
         throw new CLIOperationError(
-            "DATABASE_ID_MISMATCH",
-            `Database ID ${id} does not match the opened database`,
+            "WORKSPACE_ID_MISMATCH",
+            `Workspace ID ${id} does not match the opened workspace`,
             { actualID: metadata.id },
         );
     }

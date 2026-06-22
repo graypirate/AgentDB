@@ -11,25 +11,27 @@ import {
     deleteBlock,
     deleteEntity,
     deleteObject,
-    initializeDatabase,
+    initializeWorkspace,
     listBlock,
-    listDatabase,
     listEntity,
     listObject,
-    openDatabase,
+    listWorkspace,
+    openWorkspace,
     readBlock,
-    readDatabase,
     readEntity,
     readObject,
+    readWorkspace,
     search,
     writeBlock,
     writeEntity,
     writeObject,
 } from "../../API";
 import type { ObjectWrite } from "../../API";
+import { initializeStorage } from "../../core/storage";
 
 let db: Database | undefined;
 let tempDirectory: string | undefined;
+let originalHome: string | undefined;
 
 afterEach(() => {
     db?.close();
@@ -38,33 +40,44 @@ afterEach(() => {
         rmSync(tempDirectory, { recursive: true, force: true });
         tempDirectory = undefined;
     }
+    if (originalHome === undefined) {
+        delete process.env.HOME;
+    } else {
+        process.env.HOME = originalHome;
+    }
+    originalHome = undefined;
 });
 
-test("initializes and opens an existing database", () => {
+test("initializes and opens an existing managed workspace by name", () => {
     tempDirectory = mkdtempSync(join(tmpdir(), "agentdb-api-"));
-    const path = join(tempDirectory, "workspace.sqlite");
-    const missing = join(tempDirectory, "missing.sqlite");
+    originalHome = process.env.HOME;
+    process.env.HOME = tempDirectory;
+    const workspaceName = "workspace";
+    const missingWorkspaceName = "missing";
+    const databasePath = join(tempDirectory, ".agentdb", `${workspaceName}.sqlite`);
+    const missingPath = join(tempDirectory, ".agentdb", `${missingWorkspaceName}.sqlite`);
 
-    expect(() => openDatabase(missing)).toThrow();
-    expect(existsSync(missing)).toBe(false);
+    expect(() => openWorkspace(missingWorkspaceName)).toThrow();
+    expect(existsSync(missingPath)).toBe(false);
 
-    db = initializeDatabase(path, "Workspace");
-    const metadata = readDatabase(db);
-    expect(metadata.name).toBe("Workspace");
+    db = initializeWorkspace(workspaceName);
+    const metadata = readWorkspace(db);
+    expect(metadata.name).toBe(workspaceName);
+    expect(existsSync(databasePath)).toBe(true);
     db.close();
 
-    db = openDatabase(path);
-    expect(readDatabase(db)).toEqual(metadata);
+    db = openWorkspace(workspaceName);
+    expect(readWorkspace(db)).toEqual(metadata);
 });
 
 test("quick create functions return recursive public entities", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const objectResult = createObject(db, "AgentDB", { active: true });
     const blockResult = createBlock(db, "Standalone", { kind: "text" });
     const object = objectResult.entity;
     const block = blockResult.entity;
 
-    expect(objectResult.parentID).toBe(readDatabase(db).id);
+    expect(objectResult.parentID).toBe(readWorkspace(db).id);
     expect(blockResult.parentID).toBeNull();
     expect(object).toEqual({
         id: expect.stringMatching(/^o_/),
@@ -82,11 +95,11 @@ test("quick create functions return recursive public entities", () => {
     });
     expect(readObject(db, object.id).entity).toEqual(object);
     expect(readBlock(db, block.id).entity).toEqual(block);
-    expect(listDatabase(db)).toEqual([object.id]);
+    expect(listWorkspace(db)).toEqual([object.id]);
 });
 
 test("generic create can attach entities to a parent", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const object = create(db, {
         type: "object",
         name: "Parent",
@@ -103,7 +116,7 @@ test("generic create can attach entities to a parent", () => {
 });
 
 test("writeObject creates a mixed recursive entity tree", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
 
     const object = writeObject(db, {
         type: "object",
@@ -140,7 +153,7 @@ test("writeObject creates a mixed recursive entity tree", () => {
 });
 
 test("read output can be written back without changing shape", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const created = writeObject(db, objectWrite("Round trip")).entity;
 
     expect(writeObject(db, created).entity).toEqual(created);
@@ -148,7 +161,7 @@ test("read output can be written back without changing shape", () => {
 });
 
 test("replacement writes detach omitted subtrees without deleting them", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const created = writeObject(db, objectWrite("Original")).entity;
     const omittedBlock = created.children[0]!;
     const omittedObject = omittedBlock.children[0]!;
@@ -171,7 +184,7 @@ test("replacement writes detach omitted subtrees without deleting them", () => {
 });
 
 test("explicit IDs move existing entities into the submitted tree", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const first = writeObject(db, objectWrite("First")).entity;
     const moved = first.children[0]!;
     const second = writeObject(db, {
@@ -194,8 +207,8 @@ test("explicit IDs move existing entities into the submitted tree", () => {
     expect(readBlock(db, moved.id).entity.content).toBe("Moved and updated");
 });
 
-test("moving an object to the database root detaches its prior parent", () => {
-    db = initializeDatabase(":memory:");
+test("moving an object to the workspace root detaches its prior parent", () => {
+    db = initializeStorage(":memory:");
     const parent = writeObject(db, objectWrite("Parent")).entity;
     const nested = parent.children[0]!.children[0]!;
     if (nested.type !== "object") {
@@ -210,13 +223,13 @@ test("moving an object to the database root detaches its prior parent", () => {
         children: [],
     }).entity;
 
-    expect(listDatabase(db)).toEqual([parent.id, nested.id]);
+    expect(listWorkspace(db)).toEqual([parent.id, nested.id]);
     expect(readObject(db, parent.id).entity.children[0]?.children).toEqual([]);
     expect(readObject(db, nested.id).entity).toEqual(moved);
 });
 
 test("submitted children replace a moved entity's existing children", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const first = writeObject(db, objectWrite("First")).entity;
     const moved = first.children[0]!;
     const oldChild = moved.children[0]!;
@@ -240,19 +253,19 @@ test("submitted children replace a moved entity's existing children", () => {
 });
 
 test("entity-specific list functions return direct child IDs", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const objectResult = writeObject(db, objectWrite("Listed"));
     const object = objectResult.entity;
     const block = object.children[0]!;
     const nested = block.children[0]!;
 
-    expect(listDatabase(db)).toEqual([object.id]);
+    expect(listWorkspace(db)).toEqual([object.id]);
     expect(listObject(db, object.id)).toEqual([block.id]);
     expect(listBlock(db, block.id)).toEqual([nested.id]);
 });
 
-test("standalone blocks can own children but are not database roots", () => {
-    db = initializeDatabase(":memory:");
+test("standalone blocks can own children but are not workspace roots", () => {
+    db = initializeStorage(":memory:");
     const blockResult = writeBlock(db, {
         type: "block",
         content: "Standalone root",
@@ -268,11 +281,11 @@ test("standalone blocks can own children but are not database roots", () => {
 
     expect(blockResult.parentID).toBeNull();
     expect(readBlock(db, block.id).entity).toEqual(block);
-    expect(listDatabase(db)).toEqual([]);
+    expect(listWorkspace(db)).toEqual([]);
 });
 
 test("deleting an entity deletes its subtree", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const object = writeObject(db, objectWrite("Delete")).entity;
     const blockID = object.children[0]!.id;
     const nestedObjectID = object.children[0]!.children[0]!.id;
@@ -299,7 +312,7 @@ test("deleting an entity deletes its subtree", () => {
 });
 
 test("search supports an optional entity type parameter", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const object = createObject(db, "Needle object").entity;
     const block = createBlock(db, "Needle block").entity;
 
@@ -315,7 +328,7 @@ test("search supports an optional entity type parameter", () => {
 });
 
 test("write validation rejects duplicate IDs and cycles", () => {
-    db = initializeDatabase(":memory:");
+    db = initializeStorage(":memory:");
     const first = createObject(db, "First").entity;
     const second = createObject(db, "Second").entity;
 

@@ -11,8 +11,8 @@ describe("CLI argument parsing", () => {
         expect(parseCommand([
             "create",
             "object",
-            "--database",
-            "agent.db",
+            "--workspace",
+            "agent",
             "--name",
             "Example",
             "--property",
@@ -22,7 +22,7 @@ describe("CLI argument parsing", () => {
         ])).toEqual({
             action: "create",
             entity: "object",
-            database: "agent.db",
+            workspace: "agent",
             name: "Example",
             propertyValues: ["count=2", "note=plain text"],
         });
@@ -30,13 +30,13 @@ describe("CLI argument parsing", () => {
         expect(parseCommand([
             "create",
             "block",
-            "--database=agent.db",
+            "--workspace=agent",
             "--content=Example",
             "--parent=o_parent",
         ])).toEqual({
             action: "create",
             entity: "block",
-            database: "agent.db",
+            workspace: "agent",
             content: "Example",
             propertyValues: [],
             parentID: "o_parent",
@@ -44,9 +44,9 @@ describe("CLI argument parsing", () => {
     });
 
     test("parses write without reading or validating stdin", () => {
-        expect(parseCommand(["write", "--database", "agent.db"])).toEqual({
+        expect(parseCommand(["write", "--workspace", "agent"])).toEqual({
             action: "write",
-            database: "agent.db",
+            workspace: "agent",
         });
     });
 
@@ -54,31 +54,31 @@ describe("CLI argument parsing", () => {
         expect(parseCommand([
             "list",
             "b_example",
-            "--database",
-            "agent.db",
+            "--workspace",
+            "agent",
         ])).toEqual({
             action: "list",
-            database: "agent.db",
+            workspace: "agent",
             id: "b_example",
         });
 
         expect(parseCommand([
             "search",
             "example",
-            "--database",
-            "agent.db",
+            "--workspace",
+            "agent",
             "--type",
             "object",
         ])).toEqual({
             action: "search",
-            database: "agent.db",
+            workspace: "agent",
             query: "example",
             type: "object",
         });
     });
 
     test("infers every entity type from its ID prefix", () => {
-        expect(inferEntityType("d_example")).toBe("database");
+        expect(inferEntityType("d_example")).toBe("workspace");
         expect(inferEntityType("o_example")).toBe("object");
         expect(inferEntityType("b_example")).toBe("block");
         expectInputError(() => inferEntityType("x_example"), "INVALID_ID");
@@ -86,15 +86,15 @@ describe("CLI argument parsing", () => {
 
     test("rejects obsolete commands, invalid contexts, and short flags", () => {
         expectInputError(
-            () => parseCommand(["update", "o_example", "--database", "agent.db"]),
+            () => parseCommand(["update", "o_example", "--workspace", "agent"]),
             "INVALID_COMMAND",
         );
         expectInputError(
             () => parseCommand([
                 "create",
                 "folder",
-                "--database",
-                "agent.db",
+                "--workspace",
+                "agent",
                 "--name",
                 "Invalid",
             ]),
@@ -104,8 +104,8 @@ describe("CLI argument parsing", () => {
             () => parseCommand([
                 "create",
                 "block",
-                "--database",
-                "agent.db",
+                "--workspace",
+                "agent",
                 "--content",
                 "Invalid",
                 "--parent",
@@ -117,38 +117,38 @@ describe("CLI argument parsing", () => {
             () => parseCommand([
                 "list",
                 "o_example",
-                "--database",
-                "agent.db",
+                "--workspace",
+                "agent",
                 "--object",
                 "o_other",
             ]),
             "UNKNOWN_OPTION",
         );
         expectInputError(
-            () => parseCommand(["read", "o_example", "-d", "agent.db"]),
+            () => parseCommand(["read", "o_example", "-w", "agent"]),
             "UNKNOWN_OPTION",
         );
         expectInputError(
-            () => parseCommand(["get", "o_example", "--database", "agent.db"]),
+            () => parseCommand(["get", "o_example", "--workspace", "agent"]),
             "INVALID_COMMAND",
         );
     });
 
-    test("requires the database and validates search and deletion targets", () => {
+    test("requires the workspace and validates search and deletion targets", () => {
         expectInputError(() => parseCommand(["read", "o_example"]), "MISSING_OPTION");
         expectInputError(
             () => parseCommand([
                 "search",
                 "example",
-                "--database",
-                "agent.db",
+                "--workspace",
+                "agent",
                 "--type",
-                "database",
+                "workspace",
             ]),
             "INVALID_SEARCH_TYPE",
         );
         expectInputError(
-            () => parseCommand(["delete", "d_example", "--database", "agent.db"]),
+            () => parseCommand(["delete", "d_example", "--workspace", "agent"]),
             "UNSUPPORTED_DELETE",
         );
     });
@@ -158,8 +158,8 @@ describe("CLI argument parsing", () => {
             () => parseCommand([
                 "read",
                 "o_example",
-                "--database",
-                "agent.db",
+                "--workspace",
+                "agent",
                 "--format",
                 "markdown",
             ]),
@@ -169,21 +169,35 @@ describe("CLI argument parsing", () => {
             () => parseCommand([
                 "read",
                 "o_example",
-                "--database",
-                "first.db",
-                "--database",
-                "second.db",
+                "--workspace",
+                "first",
+                "--workspace",
+                "second",
             ]),
             "DUPLICATE_OPTION",
         );
         expectInputError(
             () => parseCommand([
                 "write",
-                "--database",
-                "agent.db",
+                "--workspace",
+                "agent",
                 "--name",
                 "invalid",
             ]),
+            "INVALID_OPTION",
+        );
+    });
+
+    test("validates workspace names instead of accepting paths", () => {
+        for (const workspace of ["./notes.sqlite", "/tmp/notes.sqlite", "../notes", ".hidden", "bad:name"]) {
+            expectInputError(
+                () => parseCommand(["read", "o_example", "--workspace", workspace]),
+                "INVALID_WORKSPACE_NAME",
+            );
+        }
+
+        expectInputError(
+            () => parseCommand(["init", "--workspace", "agent", "--name", "Agent"]),
             "INVALID_OPTION",
         );
     });

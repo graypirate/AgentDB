@@ -22,7 +22,7 @@ type CreateOptions = {
 
 /**
  * Creates an object or block with no children.
- * @param db - The database receiving the object
+ * @param db - The SQLite database backing the workspace
  * @param input - The object or block creation input
  * @param options - Optional parent placement
  * @returns The parent-aware created entity result
@@ -39,7 +39,7 @@ export function create(
 
 /**
  * Creates an object with no children.
- * @param db - The database receiving the object
+ * @param db - The SQLite database backing the workspace
  * @param name - The object name
  * @param properties - Optional object properties
  * @param options - Optional parent placement
@@ -62,7 +62,7 @@ export function createObject(
 
 /**
  * Creates a block with no children.
- * @param db - The database receiving the block
+ * @param db - The SQLite database backing the workspace
  * @param content - The block text content
  * @param properties - Optional block properties
  * @param options - Optional parent placement

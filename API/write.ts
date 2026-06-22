@@ -24,7 +24,7 @@ type WriteOptions = {
 
 /**
  * Creates or replaces an object or block tree.
- * @param db - The database receiving the write
+ * @param db - The SQLite database backing the workspace
  * @param input - The recursive entity input
  * @param options - Optional parent placement for the root entity
  * @returns The stored parent-aware recursive entity result
@@ -44,7 +44,7 @@ export function writeEntity(
 
 /**
  * Creates or replaces a block tree.
- * @param db - The database receiving the write
+ * @param db - The SQLite database backing the workspace
  * @param input - The recursive block input
  * @param options - Optional parent placement for the root block
  * @returns The stored recursive block tree
@@ -61,7 +61,7 @@ export function writeBlock(
 
 /**
  * Creates or replaces an object tree.
- * @param db - The database receiving the write
+ * @param db - The SQLite database backing the workspace
  * @param input - The recursive object input
  * @param options - Optional parent placement for the root object
  * @returns The stored recursive object tree

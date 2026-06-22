@@ -1,14 +1,18 @@
 import type { Database } from "bun:sqlite";
 
 import {
+    resolveInitializedWorkspaceDatabasePath,
+    resolveWorkspaceDatabasePath,
+} from "../core/workspace";
+import {
     initializeStorage,
     openStorage,
 } from "../core/storage";
 
-export function initializeDatabase(path: string, name?: string): Database {
-    return initializeStorage(path, name);
+export function initializeWorkspace(name: string): Database {
+    return initializeStorage(resolveInitializedWorkspaceDatabasePath(name), name);
 }
 
-export function openDatabase(path: string): Database {
-    return openStorage(path);
+export function openWorkspace(name: string): Database {
+    return openStorage(resolveWorkspaceDatabasePath(name));
 }

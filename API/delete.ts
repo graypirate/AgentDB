@@ -6,7 +6,7 @@ import type { ObjID } from "../core/types/object";
 
 /**
  * Deletes an object or block and its recursive containment subtree.
- * @param db - The database containing the entity
+ * @param db - The SQLite database backing the workspace
  * @param entityID - The object or block ID to delete
  * @returns True if the entity existed and was deleted
  */
@@ -16,7 +16,7 @@ export function deleteEntity(db: Database, entityID: string): boolean {
 
 /**
  * Deletes an object and its recursive containment subtree.
- * @param db - The database containing the object
+ * @param db - The SQLite database backing the workspace
  * @param objectID - The object ID to delete
  * @returns True if the object existed and was deleted
  */
@@ -26,7 +26,7 @@ export function deleteObject(db: Database, objectID: ObjID): boolean {
 
 /**
  * Deletes a block and its recursive containment subtree.
- * @param db - The database containing the block
+ * @param db - The SQLite database backing the workspace
  * @param blockID - The block ID to delete
  * @returns True if the block existed and was deleted
  */

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import type {
     Block,
-    DBMetadata,
     Result,
     Obj,
     SearchResult,
+    WorkspaceMetadata,
 } from "../../API/index.ts";
 
 const cliPath = resolve(import.meta.dir, "../../CLI/index.ts");
@@ -23,26 +23,25 @@ afterEach(() => {
 
 describe("CLI process output", () => {
     test("executes the complete recursive entity workflow across processes", async () => {
-        const databasePath = createDatabasePath();
+        const workspaceName = createWorkspaceName();
 
-        const initialized = await successfulJSON<DBMetadata>([
+        const initialized = await successfulJSON<WorkspaceMetadata>([
             "init",
-            "--database",
-            databasePath,
-            "--name",
-            "CLI Test",
+            "--workspace",
+            workspaceName,
         ]);
         expect(initialized.id).toStartWith("d_");
         expect(initialized).toMatchObject({
-            name: "CLI Test",
+            name: workspaceName,
             schemaVersion: "0.0.3",
         });
+        expect(existsSync(join(tempDirectory!, ".agentdb", `${workspaceName}.sqlite`))).toBe(true);
 
         const emptyObjectResult = await successfulJSON<Result<Obj>>([
             "create",
             "object",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
             "--name",
             "Empty",
             "--property",
@@ -61,8 +60,8 @@ describe("CLI process output", () => {
         const quickBlockResult = await successfulJSON<Result<Block>>([
             "create",
             "block",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
             "--content",
             "Quick block",
             "--property",
@@ -77,8 +76,8 @@ describe("CLI process output", () => {
         const childBlockResult = await successfulJSON<Result<Block>>([
             "create",
             "block",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
             "--content",
             "Child quick block",
             "--parent",
@@ -89,8 +88,8 @@ describe("CLI process output", () => {
 
         const objectResult = await successfulJSON<Result<Obj>>([
             "write",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ], JSON.stringify({
             type: "object",
             name: "AgentDB",
@@ -122,55 +121,55 @@ describe("CLI process output", () => {
         expect(await successfulJSON<Result<Obj>>([
             "read",
             objectID,
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ])).toEqual(objectResult);
 
         const rewritten = await successfulJSON<Result<Obj>>([
             "write",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ], JSON.stringify(object));
         expect(rewritten).toEqual(objectResult);
 
         expect(await successfulJSON<string[]>([
             "list",
             objectID,
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ])).toEqual([parentBlockID, object.children[1]!.id]);
 
         expect(await successfulJSON<string[]>([
             "list",
             parentBlockID,
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ])).toEqual([childObjectID]);
 
-        const databaseList = await successfulJSON<string[]>([
+        const workspaceList = await successfulJSON<string[]>([
             "list",
             initialized.id,
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ]);
-        expect(databaseList).toEqual([emptyObject.id, objectID]);
+        expect(workspaceList).toEqual([emptyObject.id, objectID]);
 
         expect(await successfulJSON<boolean>([
             "delete",
             emptyObject.id,
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ])).toBe(true);
     });
 
     test("creates and replaces a standalone block through write", async () => {
-        const databasePath = createDatabasePath();
-        await successfulJSON<DBMetadata>(["init", "--database", databasePath]);
+        const workspaceName = createWorkspaceName();
+        await successfulJSON<WorkspaceMetadata>(["init", "--workspace", workspaceName]);
 
         const createdResult = await successfulJSON<Result<Block>>([
             "write",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ], JSON.stringify({
             type: "block",
             content: "Searchable standalone content",
@@ -182,8 +181,8 @@ describe("CLI process output", () => {
 
         const updated = await successfulJSON<Result<Block>>([
             "write",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ], JSON.stringify({
             id: created.id,
             type: "block",
@@ -205,8 +204,8 @@ describe("CLI process output", () => {
         expect(await successfulJSON<SearchResult[]>([
             "search",
             "updated",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
             "--type",
             "block",
         ])).toEqual([{
@@ -218,23 +217,23 @@ describe("CLI process output", () => {
         expect(await successfulJSON<boolean>([
             "delete",
             created.id,
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ])).toBe(true);
     });
 
     test("supports concurrent reads and closes every process connection", async () => {
-        const databasePath = createDatabasePath();
-        const initialized = await successfulJSON<DBMetadata>([
+        const workspaceName = createWorkspaceName();
+        const initialized = await successfulJSON<WorkspaceMetadata>([
             "init",
-            "--database",
-            databasePath,
+            "--workspace",
+            workspaceName,
         ]);
 
         const commands = [
-            ["read", initialized.id, "--database", databasePath],
-            ["list", initialized.id, "--database", databasePath],
-            ["search", "missing", "--database", databasePath],
+            ["read", initialized.id, "--workspace", workspaceName],
+            ["list", initialized.id, "--workspace", workspaceName],
+            ["search", "missing", "--workspace", workspaceName],
         ];
         const results = await Promise.all(commands.map((arguments_) => spawnCLI(arguments_)));
 
@@ -246,20 +245,20 @@ describe("CLI process output", () => {
     });
 
     test("writes syntax and validation failures only to stderr with exit 2", async () => {
-        const missingDatabase = await spawnCLI(["read", "o_example"]);
-        expect(missingDatabase.exitCode).toBe(2);
-        expect(missingDatabase.stdout).toBe("");
-        expect(JSON.parse(missingDatabase.stderr)).toEqual({
+        const missingWorkspace = await spawnCLI(["read", "o_example"]);
+        expect(missingWorkspace.exitCode).toBe(2);
+        expect(missingWorkspace.stdout).toBe("");
+        expect(JSON.parse(missingWorkspace.stderr)).toEqual({
             error: {
                 code: "MISSING_OPTION",
-                message: "Required option missing: --database",
+                message: "Required option missing: --workspace",
             },
         });
 
         const malformed = await spawnCLI([
             "write",
-            "--database",
-            "agent.db",
+            "--workspace",
+            "agent",
         ], "{invalid");
         expect(malformed.exitCode).toBe(2);
         expect(malformed.stdout).toBe("");
@@ -269,8 +268,8 @@ describe("CLI process output", () => {
 
         const oldShape = await spawnCLI([
             "write",
-            "--database",
-            "agent.db",
+            "--workspace",
+            "agent",
         ], JSON.stringify({
             parentID: "d_parent",
             name: "Invalid",
@@ -285,8 +284,8 @@ describe("CLI process output", () => {
         const invalidProperty = await spawnCLI([
             "create",
             "block",
-            "--database",
-            "agent.db",
+            "--workspace",
+            "agent",
             "--content",
             "Invalid",
             "--property",
@@ -299,42 +298,44 @@ describe("CLI process output", () => {
         });
     });
 
-    test("maps database and API failures to exit 1", async () => {
+    test("maps workspace and API failures to exit 1", async () => {
+        const workspaceName = createWorkspaceName();
         const missing = await spawnCLI([
             "read",
             "o_missing",
-            "--database",
-            join(tmpdir(), `agentdb-missing-${crypto.randomUUID()}.sqlite`),
+            "--workspace",
+            workspaceName,
         ]);
         expect(missing.exitCode).toBe(1);
         expect(missing.stdout).toBe("");
         expect(JSON.parse(missing.stderr)).toMatchObject({
-            error: { code: "DATABASE_OPEN_FAILED" },
+            error: { code: "WORKSPACE_OPEN_FAILED" },
         });
+        expect(existsSync(join(tempDirectory!, ".agentdb", `${workspaceName}.sqlite`))).toBe(false);
 
-        const databasePath = createDatabasePath();
-        const initialized = await successfulJSON<DBMetadata>([
+        const existingWorkspaceName = "existing";
+        const initialized = await successfulJSON<WorkspaceMetadata>([
             "init",
-            "--database",
-            databasePath,
+            "--workspace",
+            existingWorkspaceName,
         ]);
         const mismatch = await spawnCLI([
             "read",
             "d_different",
-            "--database",
-            databasePath,
+            "--workspace",
+            existingWorkspaceName,
         ]);
         expect(mismatch.exitCode).toBe(1);
         expect(mismatch.stdout).toBe("");
         expect(JSON.parse(mismatch.stderr)).toMatchObject({
-            error: { code: "DATABASE_ID_MISMATCH" },
+            error: { code: "WORKSPACE_ID_MISMATCH" },
         });
 
         const missingObject = await spawnCLI([
             "read",
             "o_missing",
-            "--database",
-            databasePath,
+            "--workspace",
+            existingWorkspaceName,
         ]);
         expect(missingObject.exitCode).toBe(1);
         expect(missingObject.stdout).toBe("");
@@ -348,9 +349,9 @@ describe("CLI process output", () => {
     });
 });
 
-function createDatabasePath(): string {
+function createWorkspaceName(name = "agent"): string {
     tempDirectory = mkdtempSync(join(tmpdir(), "agentdb-cli-"));
-    return join(tempDirectory, "agent.sqlite");
+    return name;
 }
 
 async function successfulJSON<T>(arguments_: string[], input?: string): Promise<T> {
@@ -370,6 +371,10 @@ async function spawnCLI(
     input?: string,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const process = Bun.spawn([Bun.which("bun")!, cliPath, ...arguments_], {
+        env: {
+            ...Bun.env,
+            ...(tempDirectory === undefined ? {} : { HOME: tempDirectory }),
+        },
         stdin: input === undefined ? "ignore" : "pipe",
         stdout: "pipe",
         stderr: "pipe",

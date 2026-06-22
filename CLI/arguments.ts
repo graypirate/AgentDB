@@ -1,14 +1,18 @@
+import {
+    InvalidWorkspaceNameError,
+    validateWorkspaceName,
+} from "../core/workspace";
 import { CLIInputError } from "./errors.ts";
 
-export type EntityType = "database" | "object" | "block";
-export type SearchType = Exclude<EntityType, "database">;
+export type EntityType = "workspace" | "object" | "block";
+export type SearchType = Exclude<EntityType, "workspace">;
 
 export type CLICommand =
-    | { action: "init"; database: string; name?: string }
+    | { action: "init"; workspace: string }
     | {
         action: "create";
         entity: "object";
-        database: string;
+        workspace: string;
         name: string;
         propertyValues: string[];
         parentID?: string;
@@ -16,16 +20,16 @@ export type CLICommand =
     | {
         action: "create";
         entity: "block";
-        database: string;
+        workspace: string;
         content: string;
         propertyValues: string[];
         parentID?: string;
     }
-    | { action: "write"; database: string }
-    | { action: "read"; database: string; id: string }
-    | { action: "list"; database: string; id: string }
-    | { action: "delete"; database: string; id: string }
-    | { action: "search"; database: string; query: string; type?: SearchType };
+    | { action: "write"; workspace: string }
+    | { action: "read"; workspace: string; id: string }
+    | { action: "list"; workspace: string; id: string }
+    | { action: "delete"; workspace: string; id: string }
+    | { action: "search"; workspace: string; query: string; type?: SearchType };
 
 type ParsedArguments = {
     options: Map<string, string[]>;
@@ -34,11 +38,11 @@ type ParsedArguments = {
 
 const optionNames = new Set([
     "content",
-    "database",
     "name",
     "parent",
     "property",
     "type",
+    "workspace",
 ]);
 
 export function parseCommand(argv: string[]): CLICommand {
@@ -49,62 +53,61 @@ export function parseCommand(argv: string[]): CLICommand {
         throw inputError("INVALID_COMMAND", "Command is required");
     }
 
-    const database = requireSingleOption(parsed, "database");
+    const workspace = requireSingleOption(parsed, "workspace");
+    validateCommandWorkspaceName(workspace);
 
     switch (action) {
         case "init": {
-            requirePositionals(parsed, 1, "agentdb init --database PATH [--name NAME]");
-            allowOptions(parsed, ["database", "name"]);
-            const name = optionalSingleOption(parsed, "name");
+            requirePositionals(parsed, 1, "agentdb init --workspace NAME");
+            allowOptions(parsed, ["workspace"]);
             return {
                 action,
-                database,
-                ...(name === undefined ? {} : { name }),
+                workspace,
             };
         }
 
         case "create":
-            return parseCreate(parsed, database);
+            return parseCreate(parsed, workspace);
 
         case "write":
-            requirePositionals(parsed, 1, "agentdb write --database PATH < entity.json");
-            allowOptions(parsed, ["database"]);
-            return { action, database };
+            requirePositionals(parsed, 1, "agentdb write --workspace NAME < entity.json");
+            allowOptions(parsed, ["workspace"]);
+            return { action, workspace };
 
         case "read": {
-            requirePositionals(parsed, 2, "agentdb read ID --database PATH");
-            allowOptions(parsed, ["database"]);
+            requirePositionals(parsed, 2, "agentdb read ID --workspace NAME");
+            allowOptions(parsed, ["workspace"]);
             const id = parsed.positionals[1]!;
             inferEntityType(id);
-            return { action, database, id };
+            return { action, workspace, id };
         }
 
         case "list": {
-            requirePositionals(parsed, 2, "agentdb list ID --database PATH");
-            allowOptions(parsed, ["database"]);
+            requirePositionals(parsed, 2, "agentdb list ID --workspace NAME");
+            allowOptions(parsed, ["workspace"]);
             const id = parsed.positionals[1]!;
             inferEntityType(id);
 
-            return { action, database, id };
+            return { action, workspace, id };
         }
 
         case "delete": {
-            requirePositionals(parsed, 2, "agentdb delete ID --database PATH");
-            allowOptions(parsed, ["database"]);
+            requirePositionals(parsed, 2, "agentdb delete ID --workspace NAME");
+            allowOptions(parsed, ["workspace"]);
             const id = parsed.positionals[1]!;
-            if (inferEntityType(id) === "database") {
-                throw inputError("UNSUPPORTED_DELETE", "Database deletion is not supported");
+            if (inferEntityType(id) === "workspace") {
+                throw inputError("UNSUPPORTED_DELETE", "Workspace deletion is not supported");
             }
-            return { action, database, id };
+            return { action, workspace, id };
         }
 
         case "search": {
             requirePositionals(
                 parsed,
                 2,
-                "agentdb search QUERY --database PATH [--type object|block]",
+                "agentdb search QUERY --workspace NAME [--type object|block]",
             );
-            allowOptions(parsed, ["database", "type"]);
+            allowOptions(parsed, ["workspace", "type"]);
             const type = optionalSingleOption(parsed, "type");
             if (type !== undefined && !isSearchType(type)) {
                 throw inputError(
@@ -115,7 +118,7 @@ export function parseCommand(argv: string[]): CLICommand {
             }
             return {
                 action,
-                database,
+                workspace,
                 query: parsed.positionals[1]!,
                 ...(type === undefined ? {} : { type }),
             };
@@ -129,7 +132,7 @@ export function parseCommand(argv: string[]): CLICommand {
 export function inferEntityType(id: string): EntityType {
     switch (id.slice(0, 2)) {
         case "d_":
-            return "database";
+            return "workspace";
         case "o_":
             return "object";
         case "b_":
@@ -139,22 +142,22 @@ export function inferEntityType(id: string): EntityType {
     }
 }
 
-function parseCreate(parsed: ParsedArguments, database: string): CLICommand {
+function parseCreate(parsed: ParsedArguments, workspace: string): CLICommand {
     requirePositionals(
         parsed,
         2,
-        "agentdb create object|block --database PATH [options]",
+        "agentdb create object|block --workspace NAME [options]",
     );
 
     const entity = parsed.positionals[1];
     switch (entity) {
         case "object": {
-            allowOptions(parsed, ["database", "name", "parent", "property"]);
+            allowOptions(parsed, ["workspace", "name", "parent", "property"]);
             const parentID = optionalCreateParentID(parsed, entity);
             return {
                 action: "create",
                 entity,
-                database,
+                workspace,
                 name: requireSingleOption(parsed, "name"),
                 propertyValues: parsed.options.get("property") ?? [],
                 ...(parentID === undefined ? {} : { parentID }),
@@ -162,12 +165,12 @@ function parseCreate(parsed: ParsedArguments, database: string): CLICommand {
         }
 
         case "block": {
-            allowOptions(parsed, ["database", "content", "parent", "property"]);
+            allowOptions(parsed, ["workspace", "content", "parent", "property"]);
             const parentID = optionalCreateParentID(parsed, entity);
             return {
                 action: "create",
                 entity,
-                database,
+                workspace,
                 content: requireSingleOption(parsed, "content"),
                 propertyValues: parsed.options.get("property") ?? [],
                 ...(parentID === undefined ? {} : { parentID }),
@@ -225,6 +228,17 @@ function parseArguments(argv: string[]): ParsedArguments {
     return { options, positionals };
 }
 
+function validateCommandWorkspaceName(workspace: string): void {
+    try {
+        validateWorkspaceName(workspace);
+    } catch (error) {
+        if (error instanceof InvalidWorkspaceNameError) {
+            throw inputError("INVALID_WORKSPACE_NAME", error.message, error.details);
+        }
+        throw error;
+    }
+}
+
 function allowOptions(parsed: ParsedArguments, allowed: string[]): void {
     const allowedOptions = new Set(allowed);
     for (const name of parsed.options.keys()) {
@@ -261,7 +275,7 @@ function optionalSingleOption(parsed: ParsedArguments, name: string): string | u
 
 function optionalCreateParentID(
     parsed: ParsedArguments,
-    childType: Exclude<EntityType, "database">,
+    childType: Exclude<EntityType, "workspace">,
 ): string | undefined {
     const parentID = optionalSingleOption(parsed, "parent");
     if (parentID === undefined) {
@@ -269,8 +283,8 @@ function optionalCreateParentID(
     }
 
     const parentType = inferEntityType(parentID);
-    if (childType === "block" && parentType === "database") {
-        throw inputError("INVALID_PARENT", `Database parents can only contain objects: ${parentID}`);
+    if (childType === "block" && parentType === "workspace") {
+        throw inputError("INVALID_PARENT", `Workspace parents can only contain objects: ${parentID}`);
     }
     return parentID;
 }

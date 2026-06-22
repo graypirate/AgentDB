@@ -1,8 +1,9 @@
 # AgentDB
 
-AgentDB is a local SQLite store for one database entity containing objects and
-blocks. The API exposes objects and blocks as recursive entity trees. SQLite
-stores ordered containment as explicit single-parent edges.
+AgentDB stores one workspace in a local SQLite database file. A workspace
+contains objects and blocks. The API exposes objects and blocks as recursive
+entity trees, while SQLite stores ordered containment as explicit single-parent
+edges.
 
 ## Setup
 
@@ -10,10 +11,13 @@ stores ordered containment as explicit single-parent edges.
 bun install
 ```
 
+Installation creates the managed storage directory at `~/.agentdb`. It does not
+create any SQLite database files; `init` creates `~/.agentdb/<name>.sqlite`.
+
 Run the CLI directly during development:
 
 ```bash
-bun CLI/index.ts init --database ./workspace.sqlite --name "Workspace"
+bun CLI/index.ts init --workspace workspace
 ```
 
 `package.json` also exposes `CLI/index.ts` as the `agentdb` binary for linked or
@@ -22,23 +26,27 @@ installed use. The examples below use `agentdb`; replace it with
 
 ## CLI
 
-Every command requires an explicit database path. Entity types are inferred
-from their ID prefixes:
+Every command requires an explicit workspace name. The CLI stores workspace
+SQLite databases in `~/.agentdb/<name>.sqlite`; it does not accept arbitrary
+database paths. Entity
+types are inferred from their ID prefixes:
 
-- `d_`: database
+- `d_`: workspace
 - `o_`: object
 - `b_`: block
 
-Only long options such as `--database` are supported.
+Only long options such as `--workspace` are supported. Workspace names may contain
+letters, numbers, underscores, hyphens, and dots, and must not start with a dot.
 
 ### Initialize
 
 ```bash
-agentdb init --database ./workspace.sqlite --name "Workspace"
+agentdb init --workspace workspace
 ```
 
-Initialization returns the database metadata, including the generated database
-ID used when reading or listing the database.
+Initialization returns the workspace metadata, including the generated workspace
+ID used when reading or listing the workspace. The workspace metadata name is the
+same value passed to `--workspace`.
 
 ### Quick Creation
 
@@ -46,17 +54,17 @@ Create empty objects and standalone blocks using flags:
 
 ```bash
 agentdb create object \
-  --database ./workspace.sqlite \
+  --workspace workspace \
   --name "CLI Implementation" \
   --property priority=1
 
 agentdb create block \
-  --database ./workspace.sqlite \
+  --workspace workspace \
   --content "Standalone block content" \
   --property draft=true
 
 agentdb create block \
-  --database ./workspace.sqlite \
+  --workspace workspace \
   --content "Child block content" \
   --parent o_parent
 ```
@@ -65,9 +73,9 @@ Repeat `--property key=value` to add properties. Values are parsed as JSON when
 valid, so numbers, booleans, arrays, objects, and quoted strings retain their
 types. Other values remain strings.
 
-Without `--parent`, `create object` creates a database-root object and `create
+Without `--parent`, `create object` creates a workspace-root object and `create
 block` creates a standalone block. `--parent ID` appends the created entity to
-an existing object or block. Objects may also use the database ID as their
+an existing object or block. Objects may also use the workspace ID as their
 parent; blocks may not. Use `write` to create an object or block with nested
 content.
 
@@ -77,7 +85,7 @@ content.
 or a standalone block:
 
 ```bash
-agentdb write --database ./workspace.sqlite <<'JSON'
+agentdb write --workspace workspace <<'JSON'
 {
   "type": "object",
   "name": "AgentDB Architecture",
@@ -111,7 +119,7 @@ An omitted root ID creates an entity. A supplied root ID replaces that object or
 block:
 
 ```bash
-agentdb write --database ./workspace.sqlite <<'JSON'
+agentdb write --workspace workspace <<'JSON'
 {
   "id": "b_example",
   "type": "block",
@@ -133,10 +141,10 @@ submitted children.
 ### Read And List
 
 ```bash
-agentdb read o_example --database ./workspace.sqlite
-agentdb list d_example --database ./workspace.sqlite
-agentdb list o_example --database ./workspace.sqlite
-agentdb list b_example --database ./workspace.sqlite
+agentdb read o_example --workspace workspace
+agentdb list d_example --workspace workspace
+agentdb list o_example --workspace workspace
+agentdb list b_example --workspace workspace
 ```
 
 `read` returns `{ "parentID": string | null, "entity": ... }`. The nested
@@ -144,27 +152,27 @@ agentdb list b_example --database ./workspace.sqlite
 
 `list` returns shape only:
 
-- Databases list their direct object IDs.
+- Workspaces list their direct object IDs.
 - Objects list their ordered direct child IDs.
 - Blocks list their ordered direct child IDs.
 
-When reading or listing a database ID, it must match the database stored at the
-provided path.
+When reading or listing a workspace ID, it must match the workspace opened by
+the provided workspace name.
 
 ### Search And Delete
 
 ```bash
-agentdb search "recursive trees" --database ./workspace.sqlite
-agentdb search "recursive trees" --database ./workspace.sqlite --type block
+agentdb search "recursive trees" --workspace workspace
+agentdb search "recursive trees" --workspace workspace --type block
 
-agentdb delete b_example --database ./workspace.sqlite
-agentdb delete o_example --database ./workspace.sqlite
+agentdb delete b_example --workspace workspace
+agentdb delete o_example --workspace workspace
 ```
 
 Search checks object names and properties, plus block content and properties.
 Use `--type object|block` to restrict results.
 
-Delete returns `true` when the entity existed and was deleted. Database-file
+Delete returns `true` when the entity existed and was deleted. Workspace-file
 deletion is intentionally unsupported by the CLI.
 
 ### Output And Errors
@@ -173,16 +181,19 @@ Successful commands write one compact JSON value followed by a newline to
 stdout and exit with code `0`.
 
 CLI syntax and JSON validation failures write structured JSON to stderr and
-exit with code `2`. Database and API operation failures use exit code `1`:
+exit with code `2`. Workspace and API operation failures use exit code `1`:
 
 ```json
-{"error":{"code":"MISSING_OPTION","message":"Required option missing: --database"}}
+{"error":{"code":"MISSING_OPTION","message":"Required option missing: --workspace"}}
 ```
 
 Errors may also include a `details` object. The CLI never writes diagnostics to
 stdout.
 
 ## Object Type Boundary
+
+The public API accepts workspace names, not SQLite paths. Storage-level database
+path handling is internal to `core/storage`.
 
 `core/types` defines the public entity shapes exported by the API. Objects and
 blocks both include a discriminating `type` and recursive `children`.

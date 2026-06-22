@@ -1,6 +1,6 @@
 import type { Block, BlockID } from "./block";
-import type { DatabaseID } from "./database";
 import type { Obj, ObjID } from "./object";
+import type { WorkspaceID } from "./workspace";
 
 export type EntityType = "object" | "block";
 export type EntityID = ObjID | BlockID;
@@ -11,4 +11,4 @@ export interface EntityReference {
     readonly id: EntityID;
 }
 
-export type EntityParentID = DatabaseID | EntityID | null;
+export type EntityParentID = WorkspaceID | EntityID | null;
