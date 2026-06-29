@@ -1,196 +1,138 @@
-# AgentDB
+<p align="center" width="100%">
+<img width="120" alt="AgentDB logo" src="./icon.png">
+</p>
 
-AgentDB stores one workspace in a local SQLite database file. A workspace
-contains objects and blocks. The API exposes objects and blocks as recursive
-entity trees, while SQLite stores ordered containment as explicit single-parent
-edges.
+<h1 align="center">AgentDB</h1>
 
-## Setup
+<p align="center">Highly flexible object-oriented relational storage, built for LLM agents.</p>
 
-```bash
-bun install
-```
+**AgentDB** organizes structured data and content in ordered trees that agents can access through a local command-line interface, or additional MCP package (preferred). Each workspace contains Objects and Blocks. Objects are named containers that define structure; Blocks hold content or records. Both can carry custom properties and contain other Objects or Blocks, allowing the same model to represent documents, datasets, tables, tasks, and other structured information.
 
-Installation creates the managed storage directory at `~/.agentdb`. It does not
-create any SQLite database files; `init` creates `~/.agentdb/<name>.sqlite`.
+## Requirements
 
-Run the CLI directly during development:
+AgentDB requires [Bun](https://bun.sh/) 1.3 or newer.
 
 ```bash
-bun CLI/index.ts init --workspace workspace
+bun --version
 ```
 
-`package.json` also exposes `CLI/index.ts` as the `agentdb` binary for linked or
-installed use. The examples below use `agentdb`; replace it with
-`bun CLI/index.ts` when running from the repository.
+## Installation
 
-## CLI
+*You must install either command globally for normal use outside the source repository.*
 
-Every command requires an explicit workspace name. The CLI stores workspace
-SQLite databases in `~/.agentdb/<name>.sqlite`; it does not accept arbitrary
-database paths. Entity
-types are inferred from their ID prefixes:
-
-- `d_`: workspace
-- `o_`: object
-- `b_`: block
-
-Only long options such as `--workspace` are supported. Workspace names may contain
-letters, numbers, underscores, hyphens, and dots, and must not start with a dot.
-
-### Initialize
-
+1. Download or clone the latest release of **AgentDB**
+2. Open terminal to the downloaded `AgentDB` folder
+3. Install both Core and MCP packages globally:
 ```bash
-agentdb init --workspace workspace
+bun add --global ./core ./mcp
 ```
-
-Initialization returns the workspace metadata, including the generated workspace
-ID used when reading or listing the workspace. The workspace metadata name is the
-same value passed to `--workspace`.
-
-### Quick Creation
-
-Create empty objects and child blocks using flags:
-
+4. Verify both are available:
 ```bash
-agentdb create object \
-  --workspace workspace \
-  --name "CLI Implementation" \
-  --property priority=1
-
-agentdb create block \
-  --workspace workspace \
-  --content "Child block content" \
-  --parent o_parent
+agentdb --help
+agentdb-mcp --help
 ```
 
-Repeat `--property key=value` to add properties. Values are parsed as JSON when
-valid, so numbers, booleans, arrays, objects, and quoted strings retain their
-types. Other values remain strings.
+Installation does not create a workspace or mutate your home directory. Create the first workspace by [initializing](#initialization); AgentDB then creates the managed storage directory at `~/.agentdb` when needed:
 
-Without `--parent`, `create object` creates a workspace-root object. Blocks
-require `--parent ID` and are appended under an existing object or block.
-Objects may also use the workspace ID as their parent; blocks may not. Use
-`write` to create an object or block with nested content.
+### Individual Installation
 
-### Write Objects And Blocks
+- **[Core Package + CLI](./core/README.md#global-installation)**
+- **[MCP](./mcp/README.md#global-installation)**
 
-`write` reads one JSON object from stdin. Object roots may omit `--parent` and
-become workspace-root objects. Block roots require `--parent ID`:
+## Initialization
+Unless you are querying workspaces directly, the user **does not** have to initialize before using with an LLM client. On creation/initialization of the first workspace, the managed workspace storage directory is created at `~/.agentdb`.
 
-```bash
-agentdb write --workspace workspace <<'JSON'
-{
-  "type": "object",
-  "name": "AgentDB Architecture",
-  "properties": {
-    "status": "active"
-  },
-  "children": [
-    {
-      "type": "block",
-      "content": "Objects expose recursive entity trees.",
-      "children": [
-        {
-          "type": "block",
-          "content": "Array order determines sibling order.",
-          "children": []
-        }
-      ]
-    }
-  ]
-}
-JSON
-```
+See [CLI commands](./core/README.md#cli) for initialization.
 
-Objects and blocks both use `children`. Every entity includes `type:
-"object"` or `type: "block"`. New object and block IDs are omitted, not set to
-`null`. Write input JSON is only the recursive entity. Returned JSON wraps the
-stored entity as `{ "parentID": "...", "entity": ... }`, so parent placement is
-top-level metadata and recursive children remain free of `parentID`.
 
-An omitted root ID creates an entity. A supplied root ID replaces that object or
-block. Block roots require `--parent ID`:
+## MCP Configuration
 
-```bash
-agentdb write --workspace workspace --parent o_parent <<'JSON'
-{
-  "id": "b_example",
-  "type": "block",
-  "content": "Updated child content",
-  "properties": {
-    "version": 2
-  },
-  "children": []
-}
-JSON
-```
+Add the MCP to your LLM client after [installation](#installation).
 
-Replacement is complete for every submitted entity's direct children: omitted
-children are recursively deleted. Supplying an existing child ID moves that
-entity from its current parent into the submitted tree, updates it, and replaces
-that moved entity's submitted children.
+### Generic Client
 
-### Read And List
-
-```bash
-agentdb read o_example --workspace workspace
-agentdb list d_example --workspace workspace
-agentdb list o_example --workspace workspace
-agentdb list b_example --workspace workspace
-```
-
-`read` returns `{ "parentID": string | null, "entity": ... }`. The nested
-`entity` is the complete recursive object or block shape accepted by `write`.
-
-`list` returns shape only:
-
-- Workspaces list their direct object IDs.
-- Objects list their ordered direct child IDs.
-- Blocks list their ordered direct child IDs.
-
-When reading or listing a workspace ID, it must match the workspace opened by
-the provided workspace name.
-
-### Search And Delete
-
-```bash
-agentdb search "recursive trees" --workspace workspace
-agentdb search "recursive trees" --workspace workspace --type block
-
-agentdb delete b_example --workspace workspace
-agentdb delete o_example --workspace workspace
-```
-
-Search checks object names and properties, plus block content and properties.
-Use `--type object|block` to restrict results.
-
-Delete returns `true` when the entity existed and was deleted. Workspace-file
-deletion is intentionally unsupported by the CLI.
-
-### Output And Errors
-
-Successful commands write one compact JSON value followed by a newline to
-stdout and exit with code `0`.
-
-CLI syntax and JSON validation failures write structured JSON to stderr and
-exit with code `2`. Workspace and API operation failures use exit code `1`:
+Every stdio MCP client needs the same command and no arguments:
 
 ```json
-{"error":{"code":"MISSING_OPTION","message":"Required option missing: --workspace"}}
+{
+  "mcpServers": {
+    "agentdb": {
+      "command": "agentdb-mcp",
+      "args": []
+    }
+  }
+}
 ```
 
-Errors may also include a `details` object. The CLI never writes diagnostics to
-stdout.
+Some clients use `mcp_servers` instead of `mcpServers`, but the launch contract
+is unchanged. If a desktop client does not inherit your shell `PATH`, run
+`command -v agentdb-mcp` and use the returned absolute path as `command`.
 
-## Object Type Boundary
+### Codex
 
-The public API accepts workspace names, not SQLite paths. Storage-level database
-path handling is internal to `core/storage`.
+```bash
+codex mcp add agentdb -- agentdb-mcp
+codex mcp list
+```
 
-`core/types` defines the public entity shapes exported by the API. Objects and
-blocks both include a discriminating `type` and recursive `children`.
+### OpenClaw
 
-Storage-only `StoredObject` and `StoredBlock` types live in `core/storage/types.ts`.
-The global containment table is internal and is not exposed as a client-facing
-placement shape.
+```bash
+openclaw mcp add agentdb --command agentdb-mcp
+openclaw mcp doctor agentdb --probe
+```
+
+### Hermes
+
+Add the server to `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  agentdb:
+    command: agentdb-mcp
+    args: []
+```
+
+Restart Hermes so it discovers the server and registers its tools.
+
+Upgrade or remove the optional adapter independently:
+
+```bash
+bun update --global agentdb-mcp
+bun remove --global agentdb-mcp
+```
+
+## CLI Commands
+
+The `agentdb` CLI ships with the Core package. See commands, behavior, examples, and workspace rules in the [Core documentation](./core/README.md#cli).
+  
+## Storage and API Boundary
+
+While workspaces are stored in SQLite, clients **always** pass workspace names, **never** SQLite paths. Managed workspaces live at `~/.agentdb/<name>.sqlite`. **Do not** query or modify those files directly.
+
+The public TypeScript API is exported by `agentdb`. MCP depends only on that public package contract. SQLite storage types and containment tables remain internal implementation details.
+
+## Development Installation
+
+This repository is a Bun workspace containing two packages:
+
+- `core/` publishes `agentdb` and provides the `agentdb` CLI.
+- `mcp/` publishes `agentdb-mcp` and depends on the local Core workspace.
+
+### Isolated Package Development
+
+Use workspace filters when you only want Bun to install or run one package:
+
+```bash
+bun install --filter agentdb
+bun install --filter agentdb-mcp
+
+bun --filter agentdb test
+bun --filter agentdb-mcp test
+```
+
+Targeting `agentdb-mcp` also includes its local `agentdb` dependency. This is package-isolated installation within the workspace, not a separate dependency universe: both packages still use the repository's root lockfile and workspace links.
+
+Running plain `bun install` from `core/` or `mcp/` is not an isolated install. Bun discovers the parent workspace and installs the entire workspace, just as if the command had been run from the repository root. Use `--filter` when you intend to target one development package.
+
+For complete isolation from the workspace, test a packed package in a temporary directory. Normal development should use either the full workspace install or a workspace filter.

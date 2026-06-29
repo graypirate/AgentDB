@@ -2,13 +2,14 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import packageJSON from "../package.json" with { type: "json" };
 
 import { registerAgentDBTools } from "./tools/agentdb.ts";
 
 export function createAgentDBMCPServer(): McpServer {
     const server = new McpServer({
         name: "agentdb-mcp-server",
-        version: "0.0.5",
+        version: packageJSON.version,
     });
 
     registerAgentDBTools(server);

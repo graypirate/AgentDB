@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { createAgentDBMCPServer } from "../src/index.ts";
 import { agentDBTools, MCPInputError } from "../src/tools/agentdb.ts";
-import { AgentDBInputError, type Result, type WorkspaceMetadata } from "../../API";
+import { AgentDBInputError, type Result, type WorkspaceMetadata } from "agentdb";
 
 let tempDirectory: string | undefined;
 let originalHome: string | undefined;

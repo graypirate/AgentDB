@@ -1,19 +1,28 @@
 # AgentDB Client Instructions
 
-This is AgentDB, a hyper-flexible workspace for storing context in as object-oriented components.
+This is AgentDB, a flexible workspace for storing context as object-oriented components.
 
-AgentDB is currently installed as a CLI, accessible as `agentdb`.
+The repository is a Bun workspace with the Core package under `core/` and
+the optional MCP adapter under `mcp/`. Installed commands are `agentdb` and
+`agentdb-mcp`.
 
 ## Overview
 AgentDB operates on workspaces.
-Workspaces are structured containers of flexible entities called Objects and Blocks. Objects and Blocks may parent one antoher in a recurisve/tree manner.
+Workspaces are structured containers of flexible entities called Objects and Blocks. Objects and Blocks may parent one another recursively.
 
 
 Commands that operate inside one workspace require `--workspace NAME`.
 The package initializes managed storage at `~/.agentdb`, and workspaces resolve
 to `~/.agentdb/<name>.sqlite`. Clients pass names, not SQLite paths.
 
-You should NEVER query worksapce SQLite files directly. Use only available commands to operate within the intended functionality. Unintended/direct file manipulations will break a workspace.
+You should NEVER query workspace SQLite files directly. Use only the public API,
+CLI, or MCP tools. Direct file manipulation can break a workspace.
+
+## MCP
+
+Install `agentdb-mcp` separately from `agentdb`. MCP clients launch the
+`agentdb-mcp` command over stdio with no arguments. The adapter must import
+AgentDB only through the public `agentdb` package API.
 
 ## Workspaces
 Workspace names may contain letters, numbers, underscores, hyphens, and dots.

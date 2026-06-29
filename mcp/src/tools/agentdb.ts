@@ -7,25 +7,23 @@ import {
     deleteEntity,
     deleteWorkspace,
     initializeWorkspace,
+    InvalidWorkspaceNameError,
     listEntity,
+    listWorkspaceNames,
     listWorkspace,
     openWorkspace,
     readEntity,
     readWorkspace,
     search,
     validateWriteInput,
+    validateWorkspaceName,
     writeEntity,
     AgentDBInputError,
     type Create,
     type JSONRecord,
     type SearchType,
     type Write,
-} from "../../../API";
-import {
-    getWorkspaceNames,
-    InvalidWorkspaceNameError,
-    validateWorkspaceName,
-} from "../../../core/workspace";
+} from "agentdb";
 
 export class MCPInputError extends Error {
     override readonly name = "MCPInputError";
@@ -116,7 +114,7 @@ export const agentDBTools: AgentDBTool[] = [
         annotations: readOnly(),
         execute(input) {
             emptySchema.parse(input);
-            return result({ workspaces: getWorkspaceNames() });
+            return result({ workspaces: listWorkspaceNames() });
         },
     },
     {

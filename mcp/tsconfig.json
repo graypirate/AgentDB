@@ -4,5 +4,9 @@
     "types": ["bun", "node"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../core/storage/db/sql.d.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "../core/src/storage/db/sql.d.ts"
+  ]
 }

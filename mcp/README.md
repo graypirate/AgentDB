@@ -1,30 +1,44 @@
 # AgentDB MCP
 
-Local stdio MCP server for AgentDB workspaces.
+Local stdio MCP server for AgentDB. This package is a transport adapter and uses AgentDB exclusively through the public `agentdb` package API.
 
-This package is separate from AgentDB core. It exposes AgentDB through MCP tools
-and calls AgentDB only through public API exports.
+## Global Installation
 
-## Install
-
-```bash
-cd /path/to/AgentDB/mcp
-bun install
-```
-
-## Run
+This installs the `agentdb-mcp` executable and a compatible AgentDB Core library. [Install AgentDB Core globally](../core/README.md#global-installation) as well when you want its standalone CLI.
 
 ```bash
-bun /path/to/AgentDB/mcp/src/index.ts
+bun add --global agentdb-mcp
 ```
 
-Example client config:
-
-```toml
-[mcp_servers.agentdb]
-command = "bun"
-args = ["/path/to/AgentDB/mcp/src/index.ts"]
+Verify:
+```bash
+command -v agentdb-mcp
 ```
+
+Upgrade or remove the MCP package with Bun:
+```bash
+bun update --global agentdb-mcp
+bun remove --global agentdb-mcp
+```
+
+AgentDB MCP uses stdio. The MCP client starts and owns the server process; do not run it as a background daemon.
+
+## Configure a Client
+
+```json
+{
+  "mcpServers": {
+    "agentdb": {
+      "command": "agentdb-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+The client launches the server over stdio. No daemon is required. For desktop
+clients that do not inherit the shell `PATH`, use the absolute path returned by
+`command -v agentdb-mcp`.
 
 ## Tools
 
