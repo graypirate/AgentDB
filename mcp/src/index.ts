@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import packageJSON from "../package.json" with { type: "json" };
 
-import { registerTabulaTools } from "./tools/tabula.ts";
+import { registerTabulaTools } from "./tools/tabula.js";
 
 export function createTabulaMCPServer(): McpServer {
     const server = new McpServer({

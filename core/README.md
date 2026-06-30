@@ -7,7 +7,7 @@ Core API and command-line interface for Tabula.
 After the package is published, install the Core package and CLI from the npm registry:
 
 ```bash
-bun add --global tabula
+bun add --global @graypirate/tabula
 ```
 
 Verify:
@@ -18,8 +18,8 @@ tabula list
 
 Upgrade or remove the Core package with Bun:
 ```bash
-bun update --global tabula
-bun remove --global tabula
+bun update --global @graypirate/tabula
+bun remove --global @graypirate/tabula
 ```
 
 ## CLI

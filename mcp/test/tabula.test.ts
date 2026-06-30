@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { createTabulaMCPServer } from "../src/index.ts";
 import { MCPInputError, tabulaTools } from "../src/tools/tabula.ts";
-import { TabulaInputError, type Result, type WorkspaceMetadata } from "tabula";
+import { TabulaInputError, type Result, type WorkspaceMetadata } from "@graypirate/tabula";
 
 let tempDirectory: string | undefined;
 let originalHome: string | undefined;

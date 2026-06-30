@@ -1,8 +1,8 @@
 import {
     InvalidWorkspaceNameError,
     validateWorkspaceName,
-} from "../index.ts";
-import { CLIInputError } from "./errors.ts";
+} from "../index.js";
+import { CLIInputError } from "./errors.js";
 
 export type EntityType = "workspace" | "object" | "block";
 export type SearchType = Exclude<EntityType, "workspace">;

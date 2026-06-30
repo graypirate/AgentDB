@@ -101,8 +101,8 @@ Restart Hermes so it discovers the server and registers its tools.
 Upgrade or remove the optional adapter independently:
 
 ```bash
-bun update --global tabula-mcp
-bun remove --global tabula-mcp
+bun update --global @graypirate/tabula-mcp
+bun remove --global @graypirate/tabula-mcp
 ```
 
 ## CLI Commands
@@ -113,14 +113,14 @@ The `tabula` CLI ships with the Core package. See commands, behavior, examples, 
 
 While workspaces are stored in SQLite, clients **always** pass workspace names, **never** SQLite paths. Managed workspaces live at `~/.tabula/<name>.sqlite`. **Do not** query or modify those files directly.
 
-The public TypeScript API is exported by `tabula`. MCP depends only on that public package contract. SQLite storage types and containment tables remain internal implementation details.
+The public TypeScript API is exported by `@graypirate/tabula`. MCP depends only on that public package contract. SQLite storage types and containment tables remain internal implementation details.
 
 ## Development Installation
 
 This repository is a Bun workspace containing two packages:
 
-- `core/` publishes `tabula` and provides the `tabula` CLI.
-- `mcp/` publishes `tabula-mcp` and depends on the local Core workspace.
+- `core/` publishes `@graypirate/tabula` and provides the `tabula` CLI.
+- `mcp/` publishes `@graypirate/tabula-mcp` and depends on the local Core workspace.
 
 From the repository root, install the workspace dependencies and link both
 commands into `~/.bun/bin`:
@@ -135,6 +135,7 @@ command -v tabula
 command -v tabula-mcp
 tabula list
 
+bun run build
 bun test
 bun run typecheck
 ```
@@ -151,14 +152,14 @@ If either command is not found, add `~/.bun/bin` to your `PATH`.
 Use workspace filters when you only want Bun to install or run one package:
 
 ```bash
-bun install --filter tabula
-bun install --filter tabula-mcp
+bun install --filter @graypirate/tabula
+bun install --filter @graypirate/tabula-mcp
 
-bun --filter tabula test
-bun --filter tabula-mcp test
+bun --filter @graypirate/tabula test
+bun --filter @graypirate/tabula-mcp test
 ```
 
-Targeting `tabula-mcp` also includes its local `tabula` dependency. This is package-isolated installation within the workspace, not a separate dependency universe: both packages still use the repository's root lockfile and workspace links.
+Targeting `@graypirate/tabula-mcp` also includes its local `@graypirate/tabula` dependency. This is package-isolated installation within the workspace, not a separate dependency universe: both packages still use the repository's root lockfile and workspace links.
 
 Running plain `bun install` from `core/` or `mcp/` is not an isolated install. Bun discovers the parent workspace and installs the entire workspace, just as if the command had been run from the repository root. Use `--filter` when you intend to target one development package.
 

@@ -1,5 +1,5 @@
-import type { JSONRecord, JSONValue } from "../index.ts";
-import { CLIInputError } from "./errors.ts";
+import type { JSONRecord, JSONValue } from "../index.js";
+import { CLIInputError } from "./errors.js";
 
 export type Properties = JSONRecord;
 

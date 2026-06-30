@@ -6,6 +6,7 @@
     "mcp"
   ],
   "scripts": {
+    "build": "bun run --workspaces build",
     "install:local": "bun scripts/local-install.ts install",
     "uninstall:local": "bun scripts/local-install.ts uninstall",
     "test": "bun run --workspaces test",

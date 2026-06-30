@@ -1,23 +1,28 @@
 {
-  "name": "tabula",
+  "name": "@graypirate/tabula",
   "version": "1.0.0",
   "description": "Flexible object-oriented relational storage for agents",
   "type": "module",
-  "module": "./index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
   "bin": {
-    "tabula": "./CLI/index.ts"
+    "tabula": "dist/CLI/index.js"
   },
   "files": [
-    "API",
-    "CLI",
-    "src",
-    "index.ts",
+    "dist",
     "README.md"
   ],
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/src/storage/db && cp src/storage/db/schema.sql dist/src/storage/db/schema.sql && chmod 755 dist/CLI/index.js",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit"
   },

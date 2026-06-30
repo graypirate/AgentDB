@@ -11,11 +11,11 @@ import {
     readWorkspace,
     search,
     writeEntity,
-} from "../index.ts";
-import { inferEntityType, type CLICommand } from "./arguments.ts";
-import { CLIInputError, CLIOperationError } from "./errors.ts";
-import type { WriteInput } from "./json.ts";
-import { parseProperties } from "./properties.ts";
+} from "../index.js";
+import { inferEntityType, type CLICommand } from "./arguments.js";
+import { CLIInputError, CLIOperationError } from "./errors.js";
+import type { WriteInput } from "./json.js";
+import { parseProperties } from "./properties.js";
 
 type WorkspaceDatabase = ReturnType<typeof openWorkspace>;
 

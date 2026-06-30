@@ -2,9 +2,9 @@ import type {
     BlockWrite,
     JSONRecord,
     ObjectWrite,
-} from "../index.ts";
-import { TabulaInputError, validateWriteInput } from "../index.ts";
-import { CLIInputError } from "./errors.ts";
+} from "../index.js";
+import { TabulaInputError, validateWriteInput } from "../index.js";
+import { CLIInputError } from "./errors.js";
 
 export type WriteInput =
     | { entity: "block"; value: BlockWrite }

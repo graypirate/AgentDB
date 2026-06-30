@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 
-import { parseCommand } from "./arguments.ts";
-import { dispatchCommand } from "./dispatch.ts";
-import { CLIInputError, CLIOperationError } from "./errors.ts";
-import { confirmationDialogue, readStdin } from "./io.ts";
-import { parseWriteInput } from "./json.ts";
+import { parseCommand } from "./arguments.js";
+import { dispatchCommand } from "./dispatch.js";
+import { CLIInputError, CLIOperationError } from "./errors.js";
+import { confirmationDialogue, readStdin } from "./io.js";
+import { parseWriteInput } from "./json.js";
 
 type ErrorOutput = {
     error: {

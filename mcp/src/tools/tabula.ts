@@ -23,7 +23,7 @@ import {
     type JSONRecord,
     type SearchType,
     type Write,
-} from "tabula";
+} from "@graypirate/tabula";
 
 export class MCPInputError extends Error {
     override readonly name = "MCPInputError";
